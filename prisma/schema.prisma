@@ -1,0 +1,147 @@
+// Modelo de datos Fintu (Prisma 5) con columnas en español.
+// Ajusta DATABASE_URL en .env.local para Supabase.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TipoCategoria {
+  INGRESO
+  GASTO
+  TRANSFERENCIA
+}
+
+enum Direccion {
+  ENTRADA
+  SALIDA
+}
+
+enum PeriodoPlan {
+  MENSUAL
+  ANUAL
+}
+
+model Usuario {
+  id             String        @id @default(uuid())
+  correo         String        @unique
+  nombre         String?
+  avatarUrl      String?
+  authProvider   String        @default("supabase")
+  telefono       String?
+  ultimoLogin    DateTime?
+  creadoEn       DateTime      @default(now())
+  actualizadoEn  DateTime      @updatedAt
+
+  cuentas        Cuenta[]
+  categorias     Categoria[]
+  transacciones  Transaccion[]
+  planes         Plan[]
+}
+
+model TipoCuenta {
+  id               String    @id @default(uuid())
+  codigo           String    @unique
+  nombre           String
+  descripcion      String?
+  requiereCorte    Boolean   @default(false)
+  tasaInteresAnual Decimal?
+  creadaEn         DateTime  @default(now())
+  actualizadaEn    DateTime  @updatedAt
+
+  cuentas          Cuenta[]
+}
+
+model Cuenta {
+  id              String       @id @default(uuid())
+  usuarioId       String
+  tipoCuentaId    String
+  nombre          String
+  institucion     String?
+  moneda          String       @default("USD")
+  saldo           Decimal      @default(0)
+  limiteCredito   Decimal?
+  tasaApr         Decimal?
+  diaCorte        Int?
+  diaPago         Int?
+  pagoMinimo      Decimal?
+  plazoMeses      Int?
+  abiertaEn       DateTime?
+  cerradaEn       DateTime?
+  creadaEn        DateTime     @default(now())
+  actualizadaEn   DateTime     @updatedAt
+
+  usuario       Usuario        @relation(fields: [usuarioId], references: [id])
+  tipoCuenta    TipoCuenta     @relation(fields: [tipoCuentaId], references: [id])
+  transacciones Transaccion[]
+
+  @@index([usuarioId])
+  @@index([tipoCuentaId])
+}
+
+model Categoria {
+  id             String        @id @default(uuid())
+  usuarioId      String
+  nombre         String
+  tipo           TipoCategoria
+  color          String?
+  icono          String?
+  creadaEn       DateTime      @default(now())
+  actualizadaEn  DateTime      @updatedAt
+
+  usuario        Usuario       @relation(fields: [usuarioId], references: [id])
+  transacciones  Transaccion[]
+   planes         Plan[]
+
+  @@unique([usuarioId, nombre, tipo])
+  @@index([usuarioId, tipo])
+}
+
+model Transaccion {
+  id             String        @id @default(uuid())
+  cuentaId       String
+  usuarioId      String
+  monto          Decimal
+  moneda         String        @default("USD")
+  descripcion    String?
+  categoriaId    String?
+  ocurrioEn      DateTime
+  conciliada     Boolean       @default(false)
+  direccion      Direccion
+  referencia     String?
+  etiquetas      String[]
+  creadaEn       DateTime      @default(now())
+  actualizadaEn  DateTime      @updatedAt
+
+  cuenta      Cuenta      @relation(fields: [cuentaId], references: [id])
+  usuario     Usuario     @relation(fields: [usuarioId], references: [id])
+  categoria   Categoria?  @relation(fields: [categoriaId], references: [id])
+
+  @@index([cuentaId])
+  @@index([usuarioId, ocurrioEn])
+  @@index([categoriaId])
+}
+
+model Plan {
+  id            String             @id @default(uuid())
+  usuarioId     String
+  nombre        String
+  montoLimite   Decimal
+  periodo       PeriodoPlan        @default(MENSUAL)
+  categoriaId   String?
+  activo        Boolean            @default(true)
+  descripcion   String?
+  creadoEn      DateTime           @default(now())
+  actualizadoEn DateTime           @updatedAt
+
+  usuario     Usuario    @relation(fields: [usuarioId], references: [id])
+  categoria   Categoria? @relation(fields: [categoriaId], references: [id])
+
+  @@index([usuarioId])
+  @@index([categoriaId])
+  @@unique([usuarioId, nombre, periodo])
+}
