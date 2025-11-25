@@ -268,9 +268,8 @@ export default function Dashboard() {
     try {
       const res = await fetch("/api/accounts", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(cuentaForm),
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify(cuentaForm),
         credentials: "include",
       });
       if (!res.ok) {
