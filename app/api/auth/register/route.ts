@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { prisma } from "@/lib/db";
+import { hashPassword } from "@/lib/password";
 
 // POST /api/auth/register -> crea usuario en Supabase Auth con email/password y lo refleja en la tabla Usuario.
 export async function POST(request: Request) {
@@ -29,16 +30,20 @@ export async function POST(request: Request) {
   }
 
   // Reflejar en la tabla Usuario (idempotente).
+  const passwordHash = await hashPassword(password);
+
   await prisma.usuario.upsert({
     where: { id: data.user.id },
     update: {
       correo: email,
       nombre: name ?? data.user.user_metadata?.full_name ?? null,
+      passwordHash,
     },
     create: {
       id: data.user.id,
       correo: email,
       nombre: name ?? data.user.user_metadata?.full_name ?? null,
+      passwordHash,
     },
   });
 

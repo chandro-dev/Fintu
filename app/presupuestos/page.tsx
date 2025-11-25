@@ -4,9 +4,14 @@ export default function PresupuestosPage() {
       <div className="mx-auto max-w-5xl px-6 py-12">
         <h1 className="text-3xl font-semibold text-white">Presupuestos</h1>
         <p className="mt-2 text-zinc-300">
-          Define presupuestos y asigna categoras para controlar tus gastos. Integra esta vista con
+          Define planes y asigna categorias para controlar tus gastos. Integra esta vista con
           las transacciones para medir cumplimiento.
         </p>
+        <ul className="mt-6 list-disc space-y-2 pl-5 text-sm text-zinc-300">
+          <li>Define montos limite por periodo (mensual/anual).</li>
+          <li>Asocia una categoria para monitorear el gasto respecto al plan.</li>
+          <li>Consulta tu avance desde el dashboard y ajusta cuando sea necesario.</li>
+        </ul>
       </div>
     </div>
   );

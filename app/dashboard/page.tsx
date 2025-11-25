@@ -75,6 +75,25 @@ type CategoriaForm = {
   color?: string;
 };
 
+type UserProfile = {
+  authUser: {
+    id: string;
+    email?: string | null;
+    metadata?: Record<string, unknown> | null;
+  };
+  usuario: {
+    id: string;
+    correo: string;
+    nombre?: string | null;
+    avatarUrl?: string | null;
+    authProvider: string;
+    telefono?: string | null;
+    ultimoLogin?: string | null;
+    creadoEn: string;
+    actualizadoEn: string;
+  } | null;
+};
+
 const emptyCuenta: CuentaForm = { nombre: "", tipoCuentaId: "", moneda: "USD", saldo: 0 };
 const emptyTx: TxForm = { cuentaId: "", monto: 0, direccion: "SALIDA", descripcion: "" };
 const emptyCategoria: CategoriaForm = { nombre: "", tipo: "GASTO", color: "#0ea5e9" };
@@ -89,6 +108,7 @@ export default function Dashboard() {
   const [cuentaForm, setCuentaForm] = useState<CuentaForm>(emptyCuenta);
   const [txForm, setTxForm] = useState<TxForm>(emptyTx);
   const [categoriaForm, setCategoriaForm] = useState<CategoriaForm>(emptyCategoria);
+  const [userInfo, setUserInfo] = useState<UserProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showCuentaModal, setShowCuentaModal] = useState(false);
@@ -116,24 +136,45 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!session?.access_token) return;
-    void Promise.all([loadTipos(), loadCategorias(), loadCuentas(), loadTxs()]);
+    void Promise.all([loadUserProfile(), loadTipos(), loadCategorias(), loadCuentas(), loadTxs()]);
   }, [session?.access_token]);
 
-  const authHeaders = { credentials: "include" as const };
+  const accessToken = session?.access_token;
+  const authHeaders = useMemo(
+    () =>
+      accessToken
+        ? {
+            credentials: "include" as const,
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        : { credentials: "include" as const },
+    [accessToken],
+  );
 
   const loadTipos = async () => {
+    if (!accessToken) return;
     const res = await fetch("/api/tipos-cuenta", authHeaders);
     if (res.ok) setTipos(await res.json());
   };
+  const loadUserProfile = async () => {
+    if (!accessToken) return;
+    const res = await fetch("/api/auth/me", authHeaders);
+    if (res.ok) {
+      setUserInfo(await res.json());
+    }
+  };
   const loadCategorias = async () => {
+    if (!accessToken) return;
     const res = await fetch("/api/categorias", authHeaders);
     if (res.ok) setCategorias(await res.json());
   };
   const loadCuentas = async () => {
+    if (!accessToken) return;
     const res = await fetch("/api/accounts", authHeaders);
     if (res.ok) setCuentas(await res.json());
   };
   const loadTxs = async () => {
+    if (!accessToken) return;
     const res = await fetch("/api/transactions", authHeaders);
     if (res.ok) setTxs(await res.json());
   };
@@ -206,6 +247,7 @@ export default function Dashboard() {
     setSession(null);
     setCuentas([]);
     setTxs([]);
+    setUserInfo(null);
   };
 
   const validateCuenta = () => {
@@ -220,6 +262,7 @@ export default function Dashboard() {
   const createCuenta = async () => {
     const validation = validateCuenta();
     if (validation) return setError(validation);
+    if (!accessToken) return setError("No hay sesion activa");
     setBusy(true);
     setError(null);
     try {
@@ -227,6 +270,7 @@ export default function Dashboard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(cuentaForm),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         credentials: "include",
       });
       if (!res.ok) {
@@ -252,12 +296,16 @@ export default function Dashboard() {
   const createTx = async () => {
     const validation = validateTx();
     if (validation) return setError(validation);
+    if (!accessToken) return setError("No hay sesion activa");
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/transactions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ ...txForm, ocurrioEn: new Date().toISOString() }),
         credentials: "include",
       });
@@ -284,12 +332,13 @@ export default function Dashboard() {
   const createCategoria = async () => {
     const validation = validateCategoria();
     if (validation) return setError(validation);
+    if (!accessToken) return setError("No hay sesion activa");
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/categorias", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify(categoriaForm),
         credentials: "include",
       });
@@ -315,6 +364,11 @@ export default function Dashboard() {
   }, [txs]);
 
   const totalSaldo = useMemo(() => cuentas.reduce((acc, c) => acc + Number(c.saldo || 0), 0), [cuentas]);
+  const tokenPreview = useMemo(() => {
+    if (!accessToken) return "";
+    if (accessToken.length <= 26) return accessToken;
+    return `${accessToken.slice(0, 14)}...${accessToken.slice(-12)}`;
+  }, [accessToken]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-sky-950 text-zinc-50">
@@ -364,6 +418,31 @@ export default function Dashboard() {
           </section>
         ) : (
           <>
+            <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-sky-300">Usuario autenticado</p>
+                  <h2 className="text-2xl font-semibold text-white">
+                    {userInfo?.usuario?.nombre || userInfo?.authUser.email || session?.user.email || "Sesion activa"}
+                  </h2>
+                  <p className="text-sm text-zinc-400">{userInfo?.usuario?.correo ?? session?.user.email ?? "-"}</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-xs text-zinc-300">
+                  <InfoRow label="User ID" value={userInfo?.usuario?.id ?? session?.user.id ?? "-"} />
+                  <InfoRow label="Proveedor" value={userInfo?.usuario?.authProvider ?? (session?.user.app_metadata?.provider as string) ?? "supabase"} />
+                  <InfoRow
+                    label="Ultimo login"
+                    value={
+                      userInfo?.usuario?.ultimoLogin
+                        ? new Date(userInfo.usuario.ultimoLogin).toLocaleString()
+                        : "Sin registro"
+                    }
+                  />
+                  <InfoRow label="JWT" value={tokenPreview || "No token"} />
+                </div>
+              </div>
+            </section>
+
             {error && (
               <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
                 {error} <button className="underline" onClick={() => setError(null)}>cerrar</button>
@@ -580,6 +659,15 @@ function Modal({
         </div>
         {children}
       </div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-2 py-0.5">
+      <span className="w-28 text-[10px] uppercase tracking-[0.2em] text-zinc-500">{label}</span>
+      <span className="truncate text-xs text-white">{value}</span>
     </div>
   );
 }

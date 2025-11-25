@@ -2,10 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { supabaseClient } from "@/lib/supabaseClient";
 
 export function NavBar() {
   const pathname = usePathname();
-  if (pathname === "/") return null;
+  const [isSignedIn, setIsSignedIn] = useState(false);
+
+  useEffect(() => {
+    supabaseClient.auth.getSession().then(({ data }) => {
+      setIsSignedIn(Boolean(data.session));
+    });
+    const { data } = supabaseClient.auth.onAuthStateChange((_evt, session) => {
+      setIsSignedIn(Boolean(session));
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
+
+  if (!isSignedIn || pathname === "/") return null;
 
   return (
     <nav className="fixed bottom-3 left-1/2 z-50 flex w-[95%] max-w-3xl -translate-x-1/2 items-center justify-between rounded-full border border-white/10 bg-zinc-900/80 px-4 py-3 text-sm text-zinc-100 shadow-2xl backdrop-blur">

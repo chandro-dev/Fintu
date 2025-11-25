@@ -33,6 +33,7 @@ model Usuario {
   avatarUrl      String?
   authProvider   String        @default("supabase")
   telefono       String?
+  passwordHash   String?       @map("password_hash")
   ultimoLogin    DateTime?
   creadoEn       DateTime      @default(now())
   actualizadoEn  DateTime      @updatedAt
