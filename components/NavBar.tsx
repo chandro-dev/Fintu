@@ -22,21 +22,29 @@ export function NavBar() {
   if (!isSignedIn || pathname === "/") return null;
 
   return (
-    <nav className="fixed bottom-3 left-1/2 z-50 flex w-[95%] max-w-3xl -translate-x-1/2 items-center justify-between rounded-full border border-white/10 bg-zinc-900/80 px-4 py-3 text-sm text-zinc-100 shadow-2xl backdrop-blur">
-      <NavLink href="/dashboard">Dashboard</NavLink>
-      <NavLink href="/cuentas">Cuentas</NavLink>
-      <NavLink href="/transacciones">Transacciones</NavLink>
-      <NavLink href="/categorias">Categorias</NavLink>
-      <NavLink href="/tarjetas">Tarjetas</NavLink>
-      <NavLink href="/prestamos">Prestamos</NavLink>
-      <NavLink href="/presupuestos">Planes</NavLink>
+    <nav className="fixed bottom-3 left-1/2 z-50 flex w-[95%] max-w-3xl -translate-x-1/2 items-center justify-between rounded-full border border-black/10 bg-white/80 px-3 py-2 text-sm text-slate-900 shadow-[0_10px_50px_rgba(0,0,0,0.25)] backdrop-blur dark:border-white/10 dark:bg-gradient-to-r dark:from-slate-900/85 dark:via-black/80 dark:to-slate-900/85 dark:text-zinc-100">
+      <NavLink href="/dashboard" active={pathname.startsWith("/dashboard")}>Dashboard</NavLink>
+      <NavLink href="/cuentas" active={pathname.startsWith("/cuentas")}>Cuentas</NavLink>
+      <NavLink href="/transacciones" active={pathname.startsWith("/transacciones")}>Transacciones</NavLink>
+      <NavLink href="/categorias" active={pathname.startsWith("/categorias")}>Categorias</NavLink>
+      <NavLink href="/tarjetas" active={pathname.startsWith("/tarjetas")}>Tarjetas</NavLink>
+      <NavLink href="/prestamos" active={pathname.startsWith("/prestamos")}>Prestamos</NavLink>
+      <NavLink href="/presupuestos" active={pathname.startsWith("/presupuestos")}>Planes</NavLink>
     </nav>
   );
 }
 
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+function NavLink({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
   return (
-    <Link href={href} className="rounded-full px-3 py-1 hover:bg-white/10 transition-colors">
+    <Link
+      href={href}
+      className={
+        "rounded-full px-3 py-1 transition-colors " +
+        (active
+          ? "bg-white text-slate-900 shadow-inner shadow-white/40 dark:bg-sky-500 dark:text-white dark:shadow-sky-500/40"
+          : "text-zinc-200 hover:bg-white/10 hover:text-white dark:text-zinc-300")
+      }
+    >
       {children}
     </Link>
   );
