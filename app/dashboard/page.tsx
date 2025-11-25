@@ -40,7 +40,12 @@ type Transaccion = {
   ocurrioEn: string;
   direccion: "ENTRADA" | "SALIDA";
   cuentaId: string;
-  cuenta?: { nombre: string; tipoCuenta?: TipoCuenta | null; moneda: string };
+  cuenta?: {
+    nombre: string;
+    tipoCuentaId?: string;
+    tipoCuenta?: TipoCuenta | null;
+    moneda: string;
+  };
   categoria?: Categoria | null;
 };
 
@@ -431,7 +436,8 @@ export default function Dashboard() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm text-zinc-300">
-                          {tx.cuenta?.nombre ?? tx.cuentaId} · {tx.cuenta?.tipoCuenta?.codigo ?? tx.cuenta?.tipoCuentaId}
+                          {tx.cuenta?.nombre ?? tx.cuentaId} ·{" "}
+                          {tx.cuenta?.tipoCuenta?.codigo ?? tx.cuenta?.tipoCuentaId ?? "-"}
                         </p>
                         <p className="text-lg font-semibold text-white">{tx.descripcion ?? "Sin descripcion"}</p>
                         <p className="text-xs text-zinc-500">{new Date(tx.ocurrioEn).toLocaleString()}</p>
