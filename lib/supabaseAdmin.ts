@@ -12,12 +12,8 @@ export const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 // Obtiene el usuario autenticado desde las cookies de Supabase (App Router).
 // Si no hay sesión en cookies, intenta usar Authorization: Bearer <token> como respaldo.
 export async function getUserFromRequest(req?: Request) {
-  // En Next 16 cookies() es async; debemos resolver antes de usarlo.
-  const cookieStore = await cookies();
-
-  // 1) Intentar obtener el token de las cookies (sb-access-token) y validar con service role.
   // 1) Intentar refrescar con auth-helpers (usa refresh token si hace falta).
-  const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+  const supabase = createRouteHandlerClient({ cookies });
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData?.session?.access_token;
   if (accessToken) {
@@ -30,6 +26,7 @@ export async function getUserFromRequest(req?: Request) {
   }
 
   // 2) Respaldo: token directo en cookies
+  const cookieStore = await cookies();
   const cookieToken =
     cookieStore.get("sb-access-token")?.value ||
     cookieStore.get("sb:token")?.value;
