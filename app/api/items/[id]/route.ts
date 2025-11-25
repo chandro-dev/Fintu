@@ -1,13 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { items } from "../store";
 
 const findIndex = (id: string) => items.findIndex((item) => item.id === id);
 
 export async function PUT(
-  request: Request,
-  context: { params: { id: string } },
+  request: NextRequest,
+  { params }: { params: { id: string } },
 ) {
-  const { id } = context.params;
+  const { id } = params;
   const index = findIndex(id);
 
   if (index === -1) {
@@ -34,10 +34,10 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: Request,
-  context: { params: { id: string } },
+  _request: NextRequest,
+  { params }: { params: { id: string } },
 ) {
-  const { id } = context.params;
+  const { id } = params;
   const index = findIndex(id);
 
   if (index === -1) {
