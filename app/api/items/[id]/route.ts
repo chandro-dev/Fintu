@@ -5,9 +5,9 @@ const findIndex = (id: string) => items.findIndex((item) => item.id === id);
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = params;
+  const { id } = await params;
   const index = findIndex(id);
 
   if (index === -1) {
@@ -35,9 +35,9 @@ export async function PUT(
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = params;
+  const { id } = await params;
   const index = findIndex(id);
 
   if (index === -1) {
