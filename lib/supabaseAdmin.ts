@@ -80,7 +80,7 @@ async function getFallbackDevUser(): Promise<User | null> {
     email_confirmed_at: record.creadoEn.toISOString(),
     last_sign_in_at: record.actualizadoEn.toISOString(),
     phone: record.telefono ?? undefined,
-    phone_confirmed_at: null,
+    phone_confirmed_at: record.telefono ? record.actualizadoEn.toISOString() : undefined,
     role: "authenticated",
     updated_at: record.actualizadoEn.toISOString(),
     identities: [],

@@ -78,11 +78,13 @@ export function SelectField({
   value,
   onChange,
   options,
+  placeholder,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { label: string; value: string }[];
+  placeholder?: string;
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm text-slate-700 dark:text-zinc-300">
@@ -92,6 +94,11 @@ export function SelectField({
         onChange={(e) => onChange(e.target.value)}
         className="rounded-lg border border-black/10 bg-white/80 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 dark:border-white/10 dark:bg-black/40 dark:text-white dark:focus:border-white/30"
       >
+        {placeholder && (
+          <option value="" disabled hidden>
+            {placeholder}
+          </option>
+        )}
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}
