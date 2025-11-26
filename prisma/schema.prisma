@@ -106,6 +106,7 @@ model Transaccion {
   id             String        @id @default(uuid())
   cuentaId       String
   usuarioId      String
+  tipoTransaccionId String?
   monto          Decimal
   moneda         String        @default("USD")
   descripcion    String?
@@ -115,6 +116,7 @@ model Transaccion {
   direccion      Direccion
   referencia     String?
   etiquetas      String[]
+  tipoTransaccion   TipoTransaccion? @relation(fields: [tipoTransaccionId], references: [id])
   creadaEn       DateTime      @default(now())
   actualizadaEn  DateTime      @updatedAt
 
@@ -125,6 +127,18 @@ model Transaccion {
   @@index([cuentaId])
   @@index([usuarioId, ocurrioEn])
   @@index([categoriaId])
+  @@index([tipoTransaccionId])
+}
+
+model TipoTransaccion {
+  id             String        @id @default(uuid())
+  codigo         String        @unique
+  nombre         String
+  descripcion    String?
+  creadoEn       DateTime      @default(now())
+  actualizadoEn  DateTime      @updatedAt
+
+  transacciones  Transaccion[]
 }
 
 model Plan {

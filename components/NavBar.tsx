@@ -42,7 +42,7 @@ function NavLink({ href, active, children }: { href: string; active: boolean; ch
         "rounded-full px-3 py-1 transition-colors " +
         (active
           ? "bg-white text-slate-900 shadow-inner shadow-white/40 dark:bg-sky-500 dark:text-white dark:shadow-sky-500/40"
-          : "text-zinc-200 hover:bg-white/10 hover:text-white dark:text-zinc-300")
+          : "text-zinc-500 hover:bg-white/10 hover:text-white dark:text-zinc-300")
       }
     >
       {children}

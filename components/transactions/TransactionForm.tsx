@@ -54,9 +54,9 @@ export function TransactionForm({
   const montoDisplay = montoAbsoluto ? formatMoney(montoAbsoluto, currency) : "";
 
   return (
-    <div className="space-y-4 ">
+    <div className="space-y-4 text-slate-900 dark:text-zinc-100">
       {/* Toggle visual Ingreso / Gasto */}
-      <div className="rounded-2xl border border-black/10 bg-white/80 p-3 shadow-sm dark:border-white/10 dark:bg-black/40">
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-black/40">
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-zinc-400">
           Tipo de movimiento
         </p>
@@ -67,17 +67,17 @@ export function TransactionForm({
             className={
               "flex items-center justify-between rounded-xl border px-3 py-2 text-sm font-semibold transition " +
               (isEntrada
-                ? "border-emerald-400 bg-emerald-500/15 text-emerald-100 shadow-[0_0_20px_rgba(16,185,129,0.25)]"
-                : "border-black/10 bg-white text-slate-600 hover:bg-slate-100 dark:border-transparent dark:bg-black/40 dark:text-zinc-400 dark:hover:bg-white/5")
+                ? "border-emerald-400 bg-emerald-500/15 text-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.25)]"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-transparent dark:bg-black/40 dark:text-zinc-400 dark:hover:bg-white/5")
             }
           >
             <div className="flex flex-col text-left">
               <span>Ingreso</span>
-              <span className="text-[0.65rem] font-normal text-emerald-200/80">
+              <span className="text-[0.65rem] font-normal text-emerald-800/80">
                 Aumenta el saldo
               </span>
             </div>
-            <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-100">
+            <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-500">
               +
             </span>
           </button>
@@ -89,16 +89,16 @@ export function TransactionForm({
               "flex items-center justify-between rounded-xl border px-3 py-2 text-sm font-semibold transition " +
               (!isEntrada
                 ? "border-rose-400 bg-rose-500/15 text-rose-100 shadow-[0_0_20px_rgba(244,63,94,0.25)]"
-                : "border-black/10 bg-white text-slate-600 hover:bg-slate-100 dark:border-transparent dark:bg-black/40 dark:text-zinc-400 dark:hover:bg-white/5")
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-transparent dark:bg-black/40 dark:text-zinc-400 dark:hover:bg-white/5")
             }
           >
             <div className="flex flex-col text-left">
               <span>Gasto</span>
-              <span className="text-[0.65rem] font-normal text-rose-200/80">
+              <span className="text-[0.65rem] font-normal text-rose-800/80">
                 Disminuye el saldo
               </span>
             </div>
-            <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-xs text-rose-100">
+            <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-xs text-rose-400">
               −
             </span>
           </button>
@@ -135,8 +135,8 @@ export function TransactionForm({
                 className={
                   "rounded-full px-2 py-0.5 text-[0.7rem] font-semibold " +
                   (isEntrada
-                    ? "bg-emerald-500/15 text-emerald-200"
-                    : "bg-rose-500/15 text-rose-200")
+                    ? "bg-emerald-500/15 text-emerald-500"
+                    : "bg-rose-500/15 text-rose-500")
                 }
               >
                 {isEntrada ? "Ingreso" : "Gasto"}
@@ -148,8 +148,8 @@ export function TransactionForm({
                 className={
                   "flex h-11 w-11 items-center justify-center rounded-full text-lg font-semibold " +
                   (isEntrada
-                    ? "bg-emerald-500/20 text-emerald-200"
-                    : "bg-rose-500/20 text-rose-200")
+                    ? "bg-emerald-500/20 text-emerald-500"
+                    : "bg-rose-500/20 text-rose-500")
                 }
               >
                 {isEntrada ? "+" : "−"}

@@ -23,7 +23,7 @@ export function TransactionPreview({ form, cuenta, categoria, nowLocal, currency
         <span
           className={
             "rounded-full px-2 py-1 text-sm font-semibold " +
-            (isEntrada ? "bg-emerald-500/15 text-emerald-200" : "bg-rose-500/15 text-rose-200")
+            (isEntrada ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400")
           }
         >
           {isEntrada ? "+" : "-"}

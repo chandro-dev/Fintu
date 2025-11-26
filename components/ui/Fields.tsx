@@ -41,12 +41,14 @@ export function NumberField({
   onChange,
   isCurrency = false,
   currency = "USD",
+  allowNegative = false,
 }: {
   label: string;
   value: number | string;
   onChange: (v: string) => void;
   isCurrency?: boolean;
   currency?: string;
+  allowNegative?: boolean;
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm text-slate-700 dark:text-zinc-300">
@@ -61,7 +63,7 @@ export function NumberField({
           type="number"
           step="0.01"
           inputMode="decimal"
-          min="0"
+          min={allowNegative ? undefined : "0"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className="flex-1 rounded-lg border border-black/10 bg-white/80 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 dark:border-white/10 dark:bg-black/40 dark:text-white dark:focus:border-white/30"

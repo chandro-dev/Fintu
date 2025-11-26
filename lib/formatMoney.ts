@@ -1,5 +1,3 @@
-const money = new Intl.NumberFormat("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
 // utils/formatMoney.ts
 export const formatMoney = (
   value: number | string | null | undefined,

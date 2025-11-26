@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/supabaseAdmin";
+import { getTipoTransaccionId } from "@/lib/tipoTransaccion";
 
 // GET /api/transactions -> últimas transacciones del usuario
 export async function GET(request: Request) {
@@ -10,7 +11,10 @@ export async function GET(request: Request) {
   }
 
   const transacciones = await prisma.transaccion.findMany({
-    where: { usuarioId: user.id },
+    where: {
+      usuarioId: user.id,
+      tipoTransaccion: { codigo: "NORMAL" },
+    },
     orderBy: { ocurrioEn: "desc" },
     include: {
       categoria: true,
@@ -60,6 +64,23 @@ export async function POST(request: Request) {
 
   const delta = direccion === "ENTRADA" ? Number(monto) : -Number(monto);
 
+  const tipoNormalId = await getTipoTransaccionId(
+    "NORMAL",
+    "Transacción normal",
+    "Movimiento registrado por el usuario",
+  );
+
+  const existingCuenta = await prisma.cuenta.findUnique({
+    where: { id: cuentaId, usuarioId: user.id },
+  });
+
+  if (!existingCuenta) {
+    return NextResponse.json(
+      { error: "Cuenta no encontrada para este usuario" },
+      { status: 404 },
+    );
+  }
+
   const [txn] = await prisma.$transaction([
     prisma.transaccion.create({
       data: {
@@ -73,11 +94,12 @@ export async function POST(request: Request) {
         categoriaId,
         referencia,
         etiquetas,
+        tipoTransaccionId: tipoNormalId,
         conciliada,
       },
     }),
     prisma.cuenta.update({
-      where: { id: cuentaId, usuarioId: user.id },
+      where: { id: cuentaId },
       data: { saldo: { increment: delta } },
     }),
   ]);

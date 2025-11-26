@@ -1,27 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Session } from "@supabase/supabase-js";
 import { supabaseClient } from "@/lib/supabaseClient";
 import { formatMoney } from "@/lib/formatMoney";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TransactionForm } from "@/components/transactions/TransactionForm";
 import { TransactionListItem } from "@/components/transactions/TransactionListItem";
-import { TxForm, Cuenta, Transaccion, Categoria, TipoCuenta } from "@/components/transactions/types";
-import { InputField, NumberField, SelectField } from "@/components/ui/Fields";
-import { useTheme } from "@/components/ThemeProvider";
-
-type CuentaForm = {
-  nombre: string;
-  tipoCuentaId: string;
-  moneda: string;
-  saldo: number;
-  limiteCredito?: number | null;
-  tasaApr?: number | null;
-  diaCorte?: number | null;
-  diaPago?: number | null;
-  plazoMeses?: number | null;
-};
+import { TxForm, Cuenta, Transaccion, Categoria } from "@/components/transactions/types";
+import { InputField, SelectField } from "@/components/ui/Fields";
 
 type CategoriaForm = {
   nombre: string;
@@ -48,27 +35,21 @@ type UserProfile = {
   } | null;
 };
 
-const emptyCuenta: CuentaForm = { nombre: "", tipoCuentaId: "", moneda: "USD", saldo: 0 };
 const emptyTx: TxForm = { cuentaId: "", monto: 0, direccion: "SALIDA", descripcion: "", ocurrioEn: "" };
 const emptyCategoria: CategoriaForm = { nombre: "", tipo: "GASTO", color: "#0ea5e9" };
 
 export default function Dashboard() {
   const nowLocal = useMemo(() => new Date().toISOString().slice(0, 16), []);
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
-  const [tipos, setTipos] = useState<TipoCuenta[]>([]);
   const [cuentas, setCuentas] = useState<Cuenta[]>([]);
   const [txs, setTxs] = useState<Transaccion[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
-  const [cuentaForm, setCuentaForm] = useState<CuentaForm>(emptyCuenta);
   const [txForm, setTxForm] = useState<TxForm>(emptyTx);
   const [categoriaForm, setCategoriaForm] = useState<CategoriaForm>(emptyCategoria);
   const [userInfo, setUserInfo] = useState<UserProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showCuentaModal, setShowCuentaModal] = useState(false);
   const [showTxModal, setShowTxModal] = useState(false);
   const [showCatModal, setShowCatModal] = useState(false);
   const [editingTxId, setEditingTxId] = useState<string | null>(null);
@@ -92,11 +73,6 @@ export default function Dashboard() {
     return () => data.subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (!session?.access_token) return;
-    void Promise.all([loadUserProfile(), loadTipos(), loadCategorias(), loadCuentas(), loadTxs()]);
-  }, [session?.access_token]);
-
   const accessToken = session?.access_token;
   const authHeaders = useMemo(
     () =>
@@ -109,34 +85,33 @@ export default function Dashboard() {
     [accessToken],
   );
 
-  const loadTipos = async () => {
-    if (!accessToken) return;
-    const res = await fetch("/api/tipos-cuenta", authHeaders);
-    if (res.ok) setTipos(await res.json());
-  };
-  const loadUserProfile = async () => {
+  const loadUserProfile = useCallback(async () => {
     if (!accessToken) return;
     const res = await fetch("/api/auth/me", authHeaders);
     if (res.ok) {
       setUserInfo(await res.json());
     }
-  };
-  const loadCategorias = async () => {
+  }, [accessToken, authHeaders]);
+  const loadCategorias = useCallback(async () => {
     if (!accessToken) return;
     const res = await fetch("/api/categorias", authHeaders);
     if (res.ok) setCategorias(await res.json());
-  };
-  const loadCuentas = async () => {
+  }, [accessToken, authHeaders]);
+  const loadCuentas = useCallback(async () => {
     if (!accessToken) return;
     const res = await fetch("/api/accounts", authHeaders);
     if (res.ok) setCuentas(await res.json());
-  };
-  const loadTxs = async () => {
+  }, [accessToken, authHeaders]);
+  const loadTxs = useCallback(async () => {
     if (!accessToken) return;
     const res = await fetch("/api/transactions", authHeaders);
-
     if (res.ok) setTxs(await res.json());
-  };
+  }, [accessToken, authHeaders]);
+
+  useEffect(() => {
+    if (!session?.access_token) return;
+    void Promise.all([loadUserProfile(), loadCategorias(), loadCuentas(), loadTxs()]);
+  }, [session?.access_token, loadUserProfile, loadCategorias, loadCuentas, loadTxs]);
 
   const signInWithGoogle = async () => {
     setError(null);
@@ -209,42 +184,6 @@ export default function Dashboard() {
     setUserInfo(null);
   };
 
-  const validateCuenta = () => {
-    if (!cuentaForm.nombre.trim()) return "Nombre obligatorio";
-    if (!cuentaForm.tipoCuentaId) return "Selecciona un tipo de cuenta";
-    if (!cuentaForm.moneda.trim() || cuentaForm.moneda.length > 5) return "Moneda invalida";
-    if (cuentaForm.limiteCredito !== undefined && (cuentaForm.limiteCredito ?? 0) < 0)
-      return "Limite no puede ser negativo";
-    return null;
-  };
-
-  const createCuenta = async () => {
-    const validation = validateCuenta();
-    if (validation) return setError(validation);
-    if (!accessToken) return setError("No hay sesion activa");
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify(cuentaForm),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data?.error || "No se pudo crear la cuenta");
-      }
-      setCuentaForm(emptyCuenta);
-      setShowCuentaModal(false);
-      await loadCuentas();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error desconocido");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const validateTx = () => {
     if (!txForm.cuentaId) return "Selecciona la cuenta";
     if (!txForm.monto || Number(txForm.monto) <= 0) return "Monto debe ser mayor a 0";
@@ -288,8 +227,9 @@ export default function Dashboard() {
     }
   };
 
-  const deleteTx = async () => {
-    if (!editingTxId) return;
+  const deleteTx = async (id?: string) => {
+    const targetId = id ?? editingTxId;
+    if (!targetId) return;
     if (!accessToken) return setError("No hay sesion activa");
     setBusy(true);
     setError(null);
@@ -300,7 +240,7 @@ export default function Dashboard() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ id: editingTxId }),
+        body: JSON.stringify({ id: targetId }),
         credentials: "include",
       });
       if (!res.ok) {
@@ -491,7 +431,11 @@ export default function Dashboard() {
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-3">
                   {cuentas.map((c) => (
-                    <div key={c.id} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-md dark:border-white/10 dark:bg-black/30 dark:shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+                    <a
+                      key={c.id}
+                      href={`/cuentas?cuentaId=${c.id}`}
+                      className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-md transition hover:-translate-y-1 hover:shadow-lg dark:border-white/10 dark:bg-black/30 dark:shadow-[0_4px_24px_rgba(0,0,0,0.4)]"
+                    >
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-lg font-semibold text-slate-900 dark:text-white">{c.nombre}</p>
@@ -502,11 +446,13 @@ export default function Dashboard() {
                           {c.tasaApr && <p className="text-xs text-zinc-400">{c.tasaApr}% APR</p>}
                         </div>
                       </div>
-                    </div>
+                    </a>
                   ))}
                   {cuentas.length === 0 && <p className="text-sm text-zinc-400">Crea tu primera cuenta.</p>}
                 </div>
-                <button onClick={() => setShowCuentaModal(true)} className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-400 dark:text-white">Nueva cuenta</button>
+                <div className="mt-4 text-sm text-slate-600 dark:text-zinc-400">
+                  Selecciona una cuenta para ver detalle y transacciones en la sección de Cuentas.
+                </div>
               </div>
 
               <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5 dark:shadow-[0_10px_40px_rgba(0,0,0,0.4)]">
@@ -611,6 +557,7 @@ export default function Dashboard() {
                       });
                       setShowTxModal(true);
                     }}
+                    onDelete={deleteTx}
                   />
                 ))}
                 {txs.length === 0 && <p className="text-sm dark:text-zinc-400">Aun no hay transacciones.</p>}
@@ -619,25 +566,6 @@ export default function Dashboard() {
           </>
         )}
       </div>
-
-      <Modal open={showCuentaModal} onClose={() => setShowCuentaModal(false)} title="Nueva cuenta">
-        <div className="grid grid-cols-1 gap-3">
-          <InputField label="Nombre" value={cuentaForm.nombre} onChange={(v) => setCuentaForm((f) => ({ ...f, nombre: v }))} />
-          <SelectField
-            label="Tipo de cuenta"
-            value={cuentaForm.tipoCuentaId}
-            onChange={(v) => setCuentaForm((f) => ({ ...f, tipoCuentaId: v }))}
-            options={[{ label: "Selecciona", value: "" }, ...tipos.map((t) => ({ label: t.nombre, value: t.id }))]}
-          />
-          <InputField label="Moneda" value={cuentaForm.moneda} onChange={(v) => setCuentaForm((f) => ({ ...f, moneda: v }))} />
-          <NumberField label="Saldo inicial" value={cuentaForm.saldo} onChange={(v) => setCuentaForm((f) => ({ ...f, saldo: Number(v || 0) }))} />
-          {renderCuentaFields({ cuentaForm, setCuentaForm, tipos })}
-          <div className="flex gap-3 pt-2">
-            <button onClick={() => setShowCuentaModal(false)} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10">Cancelar</button>
-            <button onClick={createCuenta} disabled={busy} className="rounded-full bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-400 disabled:opacity-50 dark:text-white">{busy ? "Guardando..." : "Guardar"}</button>
-          </div>
-        </div>
-      </Modal>
 
       <Modal open={showCatModal} onClose={() => setShowCatModal(false)} title="Nueva categoria">
         <div className="grid grid-cols-1 gap-3">
@@ -822,60 +750,5 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       <span className="w-28 text-[10px] uppercase tracking-[0.2em] text-zinc-500">{label}</span>
       <span className="truncate text-xs text-slate-900 dark:text-white">{value}</span>
     </div>
-  );
-}
-
-function renderCuentaFields({
-  cuentaForm,
-  setCuentaForm,
-  tipos,
-}: {
-  cuentaForm: CuentaForm;
-  setCuentaForm: React.Dispatch<React.SetStateAction<CuentaForm>>;
-  tipos: TipoCuenta[];
-}) {
-  const tipo = tipos.find((t) => t.id === cuentaForm.tipoCuentaId)?.codigo;
-  if (!tipo) return null;
-  return (
-    <>
-      {tipo === "TARJETA_CREDITO" && (
-        <>
-          <NumberField
-            label="Limite de credito"
-            value={cuentaForm.limiteCredito ?? ""}
-            onChange={(v) => setCuentaForm((f) => ({ ...f, limiteCredito: v !== "" ? Number(v) : null }))}
-          />
-          <NumberField
-            label="Tasa APR (%)"
-            value={cuentaForm.tasaApr ?? ""}
-            onChange={(v) => setCuentaForm((f) => ({ ...f, tasaApr: v !== "" ? Number(v) : null }))}
-          />
-          <NumberField
-            label="Dia de corte"
-            value={cuentaForm.diaCorte ?? ""}
-            onChange={(v) => setCuentaForm((f) => ({ ...f, diaCorte: v !== "" ? Number(v) : null }))}
-          />
-          <NumberField
-            label="Dia de pago"
-            value={cuentaForm.diaPago ?? ""}
-            onChange={(v) => setCuentaForm((f) => ({ ...f, diaPago: v !== "" ? Number(v) : null }))}
-          />
-        </>
-      )}
-      {tipo === "PRESTAMO" && (
-        <>
-          <NumberField
-            label="Tasa APR (%)"
-            value={cuentaForm.tasaApr ?? ""}
-            onChange={(v) => setCuentaForm((f) => ({ ...f, tasaApr: v !== "" ? Number(v) : null }))}
-          />
-          <NumberField
-            label="Plazo (meses)"
-            value={cuentaForm.plazoMeses ?? ""}
-            onChange={(v) => setCuentaForm((f) => ({ ...f, plazoMeses: v !== "" ? Number(v) : null }))}
-          />
-        </>
-      )}
-    </>
   );
 }

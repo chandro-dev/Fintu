@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type User } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { prisma } from "./db";
 
@@ -36,17 +36,54 @@ export async function getUserFromRequest(req?: Request) {
     }
   }
 
+  if (process.env.NODE_ENV !== "production") {
+    const fallback = await getFallbackDevUser();
+    if (fallback) {
+      return fallback;
+    }
+  }
+
   return null;
 }
 
 // Crea el registro de Usuario en la base si aún no existe (idempotente).
-async function ensureAppUser(user: { id: string; email?: string | null; user_metadata?: any }) {
+async function ensureAppUser(user: User) {
   const id = user.id;
-  const correo = user.email ?? user.user_metadata?.email ?? `user-${id}@local`;
-  const nombre = user.user_metadata?.full_name ?? user.user_metadata?.name ?? null;
+  const metadata = (user.user_metadata ?? {}) as Record<string, unknown>;
+  const correo = user.email ?? (metadata.email as string | undefined) ?? `user-${id}@local`;
+  const nombre =
+    (metadata.full_name as string | undefined) ??
+    (metadata.name as string | undefined) ??
+    null;
   await prisma.usuario.upsert({
     where: { id },
     update: { correo, nombre, ultimoLogin: new Date() },
     create: { id, correo, nombre, ultimoLogin: new Date() },
   });
+}
+
+async function getFallbackDevUser(): Promise<User | null> {
+  const fallbackId = process.env.DEV_DEFAULT_USER_ID;
+  const record = fallbackId
+    ? await prisma.usuario.findUnique({ where: { id: fallbackId } })
+    : await prisma.usuario.findFirst({ orderBy: { creadoEn: "asc" } });
+
+  if (!record) return null;
+
+  return {
+    id: record.id,
+    app_metadata: { provider: "dev" },
+    user_metadata: { full_name: record.nombre },
+    aud: "authenticated",
+    created_at: record.creadoEn.toISOString(),
+    email: record.correo,
+    email_confirmed_at: record.creadoEn.toISOString(),
+    last_sign_in_at: record.actualizadoEn.toISOString(),
+    phone: record.telefono ?? undefined,
+    phone_confirmed_at: null,
+    role: "authenticated",
+    updated_at: record.actualizadoEn.toISOString(),
+    identities: [],
+    factors: [],
+  } as User;
 }

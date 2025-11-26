@@ -43,6 +43,12 @@ export type Transaccion = {
   descripcion: string | null;
   ocurrioEn: string;
   direccion: "ENTRADA" | "SALIDA";
+  tipoTransaccionId?: string | null;
+  tipoTransaccion?: {
+    id: string;
+    codigo: string;
+    nombre: string;
+  } | null;
   cuentaId: string;
   cuenta?: {
     nombre: string;
