@@ -21,7 +21,7 @@ export function TransactionListItem({ tx, onEdit, onDelete }: Props) {
           <span className="text-[0.9rem] uppercase tracking-wide text-zinc-400">💳 {tx.cuenta?.nombre ?? tx.cuentaId}</span>
           <span
             className={
-              "rounded-full px-2 py-1 text-sm font-semibold " + chipClass
+              "rounded-full px-2 py-1 text-xl font-semibold " + chipClass
             }
           >
             {isEntrada ? "+" : "-"}
@@ -29,20 +29,20 @@ export function TransactionListItem({ tx, onEdit, onDelete }: Props) {
           </span>
         </div>
 
-        <div className="flex flex-wrap gap-2 text-[0.7rem]">
+        <div className="flex flex-wrap gap-2 text-[1.0rem]">
           {tx.cuenta && <span className="rounded-full bg-zinc-800/70 px-2 py-0.5 text-zinc-200">🏦 {tx.cuenta.nombre}</span>}
           {tx.categoria && <span className="rounded-full bg-zinc-800/70 px-2 py-0.5 text-zinc-300">🏷️ {tx.categoria.nombre}</span>}
         </div>
 
-        <div className="text-zinc-200">{tx.descripcion || "Sin descripcion"}</div>
+        <div className="text-zinc-200 text-sm">{tx.descripcion || "Sin descripcion"}</div>
 
-        <div className="text-[0.7rem] text-zinc-500">
+        <div className="text-[1.0rem] text-zinc-500">
           {tx.ocurrioEn ? new Date(tx.ocurrioEn).toLocaleString() : new Date().toLocaleString()}
         </div>
         <div className="mt-3 flex gap-2">
           <button
             onClick={() => onEdit(tx)}
-            className="rounded-full border border-sky-400/50 px-3 py-1 text-xs font-semibold text-sky-200 hover:bg-sky-500/20"
+            className="rounded-full border border-sky-400/50 px-3 py-1 text-sm font-semibold text-sky-200 hover:bg-sky-500/20"
             title="Editar transacción"
           >
             ✏️ Editar

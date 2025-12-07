@@ -55,7 +55,7 @@ export function TransactionForm({
 
   return (
     <div className="space-y-4 text-slate-900 dark:text-zinc-100">
-      {/* Toggle visual Ingreso / Gasto */}
+      {/* Toggle visual Ingreso / Gasto. Esto reduce clicks cuando la intención es clara. */}
       <div className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-black/40">
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-zinc-400">
           Tipo de movimiento
@@ -105,7 +105,7 @@ export function TransactionForm({
         </div>
       </div>
 
-      {/* Campos del formulario */}
+      {/* Campos del formulario: cuenta, fecha, monto, categoría, descripción */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <SelectField
           label="Cuenta"
@@ -124,7 +124,7 @@ export function TransactionForm({
           type="datetime-local"
         />
 
-        {/* Monto: input texto, solo números, formateado tipo moneda */}
+        {/* Monto: entrada numérica pero formateada; se guarda el valor crudo en estado. */}
         <div className="md:col-span-2">
           <div className="rounded-2xl border border-black/10 bg-white/80 p-3 shadow-sm dark:border-white/10 dark:bg-black/50">
             <div className="mb-2 flex items-center justify-between">

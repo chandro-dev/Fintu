@@ -19,10 +19,25 @@ export const formatMoney = (
     n = 0;
   }
 
-  return new Intl.NumberFormat(locale, {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(n);
+  const safeCurrency =
+    typeof currency === "string" && currency.trim().length === 3
+      ? currency.trim().toUpperCase()
+      : "COP";
+
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: safeCurrency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(n);
+  } catch (_err) {
+    // Si el código de moneda sigue siendo inválido, caer a COP.
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: "COP",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(n);
+  }
 };

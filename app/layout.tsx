@@ -5,6 +5,7 @@ import "./globals.css";
 import { NavBar } from "@/components/NavBar";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { ThemeSurface } from "@/components/ThemeSurface";
+import { AppDataProvider } from "@/components/AppDataProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,8 +34,10 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <ThemeSurface>
-            <div className="min-h-screen pb-24">{children}</div>
-            <NavBar />
+            <AppDataProvider>
+              <div className="min-h-screen pb-24">{children}</div>
+              <NavBar />
+            </AppDataProvider>
           </ThemeSurface>
         </ThemeProvider>
       </body>

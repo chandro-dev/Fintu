@@ -116,7 +116,9 @@ export async function PATCH(request: Request) {
 
   const dataToUpdate: Prisma.CuentaUpdateInput = {};
   if (nombre !== undefined) dataToUpdate.nombre = nombre;
-  if (tipoCuentaId !== undefined) dataToUpdate.tipoCuenta = tipoCuentaId;
+  if (tipoCuentaId !== undefined) {
+    dataToUpdate.tipoCuenta = { connect: { id: tipoCuentaId } };
+  }
   if (moneda !== undefined) dataToUpdate.moneda = moneda;
   if (limiteCredito !== undefined) dataToUpdate.limiteCredito = limiteCredito;
   if (tasaApr !== undefined) dataToUpdate.tasaApr = tasaApr;

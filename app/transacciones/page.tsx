@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Session } from "@supabase/supabase-js";
-import { supabaseClient } from "@/lib/supabaseClient";
+import { useCallback, useMemo, useState } from "react";
+import { useAppData } from "@/components/AppDataProvider";
 import { formatMoney } from "@/lib/formatMoney";
 import { TransactionCreationPanel } from "./TransactionCreationPanel";
 import { TransactionForm } from "@/components/transactions/TransactionForm";
 import { InputField, SelectField } from "@/components/ui/Fields";
-import type { Categoria, Cuenta, Transaccion, TxForm } from "@/components/transactions/types";
+import type { Transaccion, TxForm } from "@/components/transactions/types";
+import { TransactionListItem } from "@/components/transactions/TransactionListItem";
+import { TransaccionService } from "@/lib/services/TransaccionService";
 
 type Summary = { ingresos: number; egresos: number; total: number };
 
@@ -21,13 +22,16 @@ const createEmptyTxForm = (nowLocal: string, cuentaId = ""): TxForm => ({
 });
 
 export default function TransaccionesPage() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loadingSession, setLoadingSession] = useState(true);
-  const [loadingData, setLoadingData] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [cuentas, setCuentas] = useState<Cuenta[]>([]);
-  const [categorias, setCategorias] = useState<Categoria[]>([]);
-  const [txs, setTxs] = useState<Transaccion[]>([]);
+  const {
+    session,
+    loadingSession,
+    loadingData,
+    error,
+    cuentas,
+    categorias,
+    transacciones: txs,
+    refresh,
+  } = useAppData();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTxId, setEditingTxId] = useState<string | null>(null);
@@ -42,60 +46,8 @@ export default function TransaccionesPage() {
   const [filterDesde, setFilterDesde] = useState("");
   const [filterHasta, setFilterHasta] = useState("");
 
-  useEffect(() => {
-    supabaseClient.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoadingSession(false);
-    });
-    const { data } = supabaseClient.auth.onAuthStateChange((_evt, newSession) => {
-      setSession(newSession);
-    });
-    return () => data.subscription.unsubscribe();
-  }, []);
-
   const accessToken = session?.access_token;
-  const authHeaders = useMemo(
-    () => ({
-      credentials: "include" as const,
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
-    }),
-    [accessToken],
-  );
-
-  const loadData = useCallback(async () => {
-    if (!accessToken) return;
-    setLoadingData(true);
-    setError(null);
-    try {
-      const [cuentasRes, categoriasRes, txRes] = await Promise.all([
-        fetch("/api/accounts", authHeaders),
-        fetch("/api/categorias", authHeaders),
-        fetch("/api/transactions", authHeaders),
-      ]);
-
-      if (!cuentasRes.ok || !categoriasRes.ok || !txRes.ok) {
-        const errRes = !cuentasRes.ok
-          ? await cuentasRes.json().catch(() => null)
-          : !categoriasRes.ok
-            ? await categoriasRes.json().catch(() => null)
-            : await txRes.json().catch(() => null);
-        throw new Error(errRes?.error || "No se pudo cargar la información");
-      }
-
-      setCuentas(await cuentasRes.json());
-      setCategorias(await categoriasRes.json());
-      setTxs(await txRes.json());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error desconocido");
-    } finally {
-      setLoadingData(false);
-    }
-  }, [accessToken, authHeaders]);
-
-  useEffect(() => {
-    if (!accessToken) return;
-    void loadData();
-  }, [accessToken, loadData]);
+  const forceRefresh = useCallback(() => refresh({ force: true }), [refresh]);
 
   const startEdit = (tx: Transaccion) => {
     setEditingTxId(tx.id);
@@ -127,31 +79,12 @@ export default function TransaccionesPage() {
     setEditBusy(true);
     setEditError(null);
     try {
-      const payload = {
-        ...editForm,
-        id: editingTxId,
-        monto: Number(editForm.monto),
-        ocurrioEn: editForm.ocurrioEn
-          ? new Date(editForm.ocurrioEn).toISOString()
-          : new Date().toISOString(),
-      };
-      const res = await fetch("/api/transactions", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        },
-        body: JSON.stringify(payload),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error || "No se pudo actualizar la transacción");
-      }
+      if (!accessToken) throw new Error("No hay sesión activa");
+      await TransaccionService.actualizar(editingTxId, editForm, { accessToken });
       setActionMessage("Transacción actualizada");
       setShowEditModal(false);
       setEditingTxId(null);
-      await loadData();
+      await forceRefresh();
     } catch (err) {
       setEditError(err instanceof Error ? err.message : "Error desconocido");
     } finally {
@@ -164,23 +97,12 @@ export default function TransaccionesPage() {
     setEditBusy(true);
     setEditError(null);
     try {
-      const res = await fetch("/api/transactions", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        },
-        body: JSON.stringify({ id }),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error || "No se pudo eliminar la transacción");
-      }
+      if (!accessToken) throw new Error("No hay sesión activa");
+      await TransaccionService.eliminar(id, { accessToken });
       setActionMessage("Transacción eliminada");
       setShowEditModal(false);
       setEditingTxId(null);
-      await loadData();
+      await forceRefresh();
     } catch (err) {
       setEditError(err instanceof Error ? err.message : "Error desconocido");
     } finally {
@@ -363,52 +285,14 @@ export default function TransaccionesPage() {
                     Registra tu primera transacción.
                   </p>
                 )}
-            {recientes.map((tx) => (
-              <div
-                key={tx.id}
-                className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm text-slate-200"
-              >
-                <div>
-                  <p className="font-medium text-white">
-                    {tx.descripcion || "Movimiento sin descripción"}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {tx.cuenta?.nombre ?? "Cuenta desconocida"} ·{" "}
-                    {new Date(tx.ocurrioEn).toLocaleString()}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p
-                    className={`text-base font-semibold ${
-                      tx.direccion === "ENTRADA" ? "text-emerald-300" : "text-rose-300"
-                    }`}
-                  >
-                    {tx.direccion === "ENTRADA" ? "+" : "-"}
-                    {formatMoney(Number(tx.monto), tx.moneda)}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {tx.categoria?.nombre ?? "Sin categoría"}
-                  </p>
-                  <div className="mt-2 flex items-center justify-end gap-2 text-xs">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(tx)}
-                      className="rounded-full border border-sky-400/40 px-3 py-1 text-sky-200 hover:bg-sky-500/10"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteTransaction(tx.id)}
-                      className="rounded-full border border-rose-400/40 px-3 py-1 text-rose-200 hover:bg-rose-500/10"
-                      disabled={editBusy && editingTxId === tx.id}
-                    >
-                      Eliminar
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
+                {recientes.map((tx) => (
+                  <TransactionListItem
+                    key={tx.id}
+                    tx={tx}
+                    onEdit={startEdit}
+                    onDelete={(id) => handleDeleteTransaction(id)}
+                  />
+                ))}
           </div>
         </section>
 
@@ -459,7 +343,7 @@ export default function TransaccionesPage() {
             authToken={accessToken}
             onCreated={() => {
               setShowCreateModal(false);
-              void loadData();
+              void forceRefresh();
             }}
           />
         </Modal>
