@@ -26,103 +26,207 @@ enum PeriodoPlan {
   ANUAL
 }
 
-model Usuario {
-  id             String        @id @default(uuid())
-  correo         String        @unique
-  nombre         String?
-  avatarUrl      String?
-  authProvider   String        @default("supabase")
-  telefono       String?
-  passwordHash   String?       @map("password_hash")
-  ultimoLogin    DateTime?
-  creadoEn       DateTime      @default(now())
-  actualizadoEn  DateTime      @updatedAt
+enum EstadoTarjeta {
+  ACTIVA
+  CERRADA
+}
 
-  cuentas        Cuenta[]
-  categorias     Categoria[]
-  transacciones  Transaccion[]
-  planes         Plan[]
+enum TipoMovimientoTarjeta {
+  COMPRA
+  PAGO
+  INTERES
+  CUOTA
+  AJUSTE
+}
+
+enum EstadoCompraTarjeta {
+  ABIERTA
+  PAGADA
+}
+
+model Usuario {
+  id            String    @id @default(uuid())
+  correo        String    @unique
+  nombre        String?
+  avatarUrl     String?
+  authProvider  String    @default("supabase")
+  telefono      String?
+  passwordHash  String?   @map("password_hash")
+  ultimoLogin   DateTime?
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
+
+  cuentas               Cuenta[]
+  categorias            Categoria[]
+  transacciones         Transaccion[]
+  planes                Plan[]
+  tarjetas              TarjetaCredito[]       @relation("UsuarioTarjeta")
+  tarjetaMovimientos    TarjetaMovimiento[]    @relation("UsuarioTarjetaMovimiento")
+  tarjetaCuotas         TarjetaCuota[]         @relation("UsuarioTarjetaCuota")
+  transaccionCategorias TransaccionCategoria[] @relation("UsuarioTransaccionCategoria")
+  tarjetaCompras        TarjetaCompra[]
 }
 
 model TipoCuenta {
-  id               String    @id @default(uuid())
-  codigo           String    @unique
+  id               String   @id @default(uuid())
+  codigo           String   @unique
   nombre           String
   descripcion      String?
-  requiereCorte    Boolean   @default(false)
+  requiereCorte    Boolean  @default(false)
   tasaInteresAnual Decimal?
-  creadaEn         DateTime  @default(now())
-  actualizadaEn    DateTime  @updatedAt
+  creadaEn         DateTime @default(now())
+  actualizadaEn    DateTime @updatedAt
 
-  cuentas          Cuenta[]
+  cuentas Cuenta[]
 }
 
 model Cuenta {
-  id              String       @id @default(uuid())
-  usuarioId       String
-  tipoCuentaId    String
-  nombre          String
-  institucion     String?
-  moneda          String       @default("USD")
-  saldo           Decimal      @default(0)
-  limiteCredito   Decimal?
-  tasaApr         Decimal?
-  diaCorte        Int?
-  diaPago         Int?
-  pagoMinimo      Decimal?
-  plazoMeses      Int?
-  abiertaEn       DateTime?
-  cerradaEn       DateTime?
-  creadaEn        DateTime     @default(now())
-  actualizadaEn   DateTime     @updatedAt
+  id            String    @id @default(uuid())
+  usuarioId     String
+  tipoCuentaId  String
+  nombre        String
+  institucion   String?
+  moneda        String    @default("USD")
+  saldo         Decimal   @default(0)
+  limiteCredito Decimal?
+  tasaApr       Decimal?
+  diaCorte      Int?
+  diaPago       Int?
+  pagoMinimo    Decimal?
+  plazoMeses    Int?
+  abiertaEn     DateTime?
+  cerradaEn     DateTime?
+  creadaEn      DateTime  @default(now())
+  actualizadaEn DateTime  @updatedAt
 
-  usuario       Usuario        @relation(fields: [usuarioId], references: [id])
-  tipoCuenta    TipoCuenta     @relation(fields: [tipoCuentaId], references: [id])
+  usuario       Usuario         @relation(fields: [usuarioId], references: [id])
+  tipoCuenta    TipoCuenta      @relation(fields: [tipoCuentaId], references: [id])
   transacciones Transaccion[]
+  tarjeta       TarjetaCredito? @relation("CuentaTarjeta")
 
   @@index([usuarioId])
   @@index([tipoCuentaId])
 }
 
-model Categoria {
-  id             String        @id @default(uuid())
-  usuarioId      String
-  nombre         String
-  tipo           TipoCategoria
-  color          String?
-  icono          String?
-  creadaEn       DateTime      @default(now())
-  actualizadaEn  DateTime      @updatedAt
+model TarjetaCredito {
+  id                String        @id @default(uuid())
+  usuarioId         String
+  cuentaId          String        @unique
+  nombre            String
+  emisor            String?
+  moneda            String        @default("USD")
+  cupoTotal         Decimal       @default(0)
+  saldoActual       Decimal       @default(0)
+  tasaEfectivaAnual Decimal
+  diaCorte          Int
+  diaPago           Int
+  pagoMinimoPct     Decimal?      @default(0)
+  estado            EstadoTarjeta @default(ACTIVA)
+  abiertaEn         DateTime      @default(now())
+  cerradaEn         DateTime?
+  creadaEn          DateTime      @default(now())
+  actualizadaEn     DateTime      @updatedAt
 
-  usuario        Usuario       @relation(fields: [usuarioId], references: [id])
-  transacciones  Transaccion[]
-   planes         Plan[]
+  usuario     Usuario             @relation("UsuarioTarjeta", fields: [usuarioId], references: [id])
+  cuenta      Cuenta              @relation("CuentaTarjeta", fields: [cuentaId], references: [id])
+  movimientos TarjetaMovimiento[]
+  cuotas      TarjetaCuota[]
+  compras     TarjetaCompra[]
+
+  @@index([usuarioId])
+}
+
+model TarjetaMovimiento {
+  id             String                @id @default(uuid())
+  usuarioId      String
+  tarjetaId      String
+  transaccionId  String?               @unique
+  compraId       String?
+  tipo           TipoMovimientoTarjeta
+  monto          Decimal
+  descripcion    String?
+  ocurrioEn      DateTime
+  cuotaId        String?
+  saldoPosterior Decimal?
+  creadaEn       DateTime              @default(now())
+  actualizadaEn  DateTime              @updatedAt
+
+  usuario     Usuario        @relation("UsuarioTarjetaMovimiento", fields: [usuarioId], references: [id])
+  tarjeta     TarjetaCredito @relation(fields: [tarjetaId], references: [id])
+  transaccion Transaccion?   @relation("TransaccionTarjetaMov", fields: [transaccionId], references: [id])
+  compra      TarjetaCompra? @relation(fields: [compraId], references: [id])
+  cuota       TarjetaCuota?  @relation(fields: [cuotaId], references: [id])
+
+  @@index([usuarioId])
+  @@index([tarjetaId])
+  @@index([transaccionId])
+  @@index([compraId])
+}
+
+model TarjetaCuota {
+  id               String    @id @default(uuid())
+  usuarioId        String
+  tarjetaId        String
+  descripcion      String?
+  montoOriginal    Decimal
+  saldoPendiente   Decimal
+  cuotasTotales    Int
+  cuotaActual      Int       @default(1)
+  fechaInicio      DateTime
+  fechaProximaPago DateTime?
+  creadaEn         DateTime  @default(now())
+  actualizadaEn    DateTime  @updatedAt
+
+  usuario     Usuario             @relation("UsuarioTarjetaCuota", fields: [usuarioId], references: [id])
+  tarjeta     TarjetaCredito      @relation(fields: [tarjetaId], references: [id])
+  movimientos TarjetaMovimiento[]
+
+  @@index([usuarioId])
+  @@index([tarjetaId])
+}
+
+model Categoria {
+  id            String        @id @default(uuid())
+  usuarioId     String
+  nombre        String
+  tipo          TipoCategoria
+  color         String?
+  icono         String?
+  creadaEn      DateTime      @default(now())
+  actualizadaEn DateTime      @updatedAt
+
+  usuario            Usuario                @relation(fields: [usuarioId], references: [id])
+  transacciones      Transaccion[]
+  transaccionesPivot TransaccionCategoria[]
+  planes             Plan[]
 
   @@unique([usuarioId, nombre, tipo])
   @@index([usuarioId, tipo])
 }
 
 model Transaccion {
-  id             String        @id @default(uuid())
-  cuentaId       String
-  usuarioId      String
+  id                String             @id @default(uuid())
+  cuentaId          String
+  usuarioId         String
   tipoTransaccionId String?
-  monto          Decimal
-  moneda         String        @default("USD")
-  descripcion    String?
-  categoriaId    String?
-  ocurrioEn      DateTime
-  conciliada     Boolean       @default(false)
-  direccion      Direccion
-  referencia     String?
-  etiquetas      String[]
-  tipoTransaccion   TipoTransaccion? @relation(fields: [tipoTransaccionId], references: [id])
-  creadaEn       DateTime      @default(now())
-  actualizadaEn  DateTime      @updatedAt
+  monto             Decimal
+  moneda            String             @default("USD")
+  descripcion       String?
+  categoriaId       String?
+  ocurrioEn         DateTime
+  conciliada        Boolean            @default(false)
+  direccion         Direccion
+  referencia        String?
+  etiquetas         String[]
+  tipoTransaccion   TipoTransaccion?   @relation(fields: [tipoTransaccionId], references: [id])
+  tarjetaMovimiento TarjetaMovimiento? @relation("TransaccionTarjetaMov")
+  creadaEn          DateTime           @default(now())
+  actualizadaEn     DateTime           @updatedAt
 
-  cuenta      Cuenta      @relation(fields: [cuentaId], references: [id])
-  usuario     Usuario     @relation(fields: [usuarioId], references: [id])
-  categoria   Categoria?  @relation(fields: [categoriaId], references: [id])
+  cuenta          Cuenta                 @relation(fields: [cuentaId], references: [id])
+  usuario         Usuario                @relation(fields: [usuarioId], references: [id])
+  categoria       Categoria?             @relation(fields: [categoriaId], references: [id])
+  categoriasPivot TransaccionCategoria[]
 
   @@index([cuentaId])
   @@index([usuarioId, ocurrioEn])
@@ -130,33 +234,69 @@ model Transaccion {
   @@index([tipoTransaccionId])
 }
 
-model TipoTransaccion {
-  id             String        @id @default(uuid())
-  codigo         String        @unique
-  nombre         String
-  descripcion    String?
-  creadoEn       DateTime      @default(now())
-  actualizadoEn  DateTime      @updatedAt
+model TransaccionCategoria {
+  id            String   @id @default(uuid())
+  transaccionId String
+  categoriaId   String
+  usuarioId     String
+  creadaEn      DateTime @default(now())
 
-  transacciones  Transaccion[]
+  transaccion Transaccion @relation(fields: [transaccionId], references: [id])
+  categoria   Categoria   @relation(fields: [categoriaId], references: [id])
+  usuario     Usuario     @relation("UsuarioTransaccionCategoria", fields: [usuarioId], references: [id])
+
+  @@unique([transaccionId, categoriaId])
+  @@index([usuarioId])
+}
+
+model TarjetaCompra {
+  id             String              @id @default(uuid())
+  usuarioId      String
+  tarjetaId      String
+  descripcion    String?
+  montoTotal     Decimal
+  saldoPendiente Decimal
+  cuotasTotales  Int?
+  estado         EstadoCompraTarjeta @default(ABIERTA)
+  ocurrioEn      DateTime
+  creadaEn       DateTime            @default(now())
+  actualizadaEn  DateTime            @updatedAt
+
+  usuario     Usuario             @relation(fields: [usuarioId], references: [id])
+  tarjeta     TarjetaCredito      @relation(fields: [tarjetaId], references: [id])
+  movimientos TarjetaMovimiento[]
+
+  @@index([usuarioId])
+  @@index([tarjetaId])
+}
+
+model TipoTransaccion {
+  id            String   @id @default(uuid())
+  codigo        String   @unique
+  nombre        String
+  descripcion   String?
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  transacciones Transaccion[]
 }
 
 model Plan {
-  id            String             @id @default(uuid())
+  id            String      @id @default(uuid())
   usuarioId     String
   nombre        String
   montoLimite   Decimal
-  periodo       PeriodoPlan        @default(MENSUAL)
+  periodo       PeriodoPlan @default(MENSUAL)
   categoriaId   String?
-  activo        Boolean            @default(true)
+  activo        Boolean     @default(true)
   descripcion   String?
-  creadoEn      DateTime           @default(now())
-  actualizadoEn DateTime           @updatedAt
+  creadoEn      DateTime    @default(now())
+  actualizadoEn DateTime    @updatedAt
 
-  usuario     Usuario    @relation(fields: [usuarioId], references: [id])
-  categoria   Categoria? @relation(fields: [categoriaId], references: [id])
+  usuario   Usuario    @relation(fields: [usuarioId], references: [id])
+  categoria Categoria? @relation(fields: [categoriaId], references: [id])
 
+  @@unique([usuarioId, nombre, periodo])
   @@index([usuarioId])
   @@index([categoriaId])
-  @@unique([usuarioId, nombre, periodo])
 }

@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Session } from "@supabase/supabase-js";
 import { supabaseClient } from "@/lib/supabaseClient";
 import { formatMoney } from "@/lib/formatMoney";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { TransactionForm } from "@/components/transactions/TransactionForm";
 import { TransactionListItem } from "@/components/transactions/TransactionListItem";
 import {
@@ -191,7 +190,9 @@ export default function Dashboard() {
       });
       if (err) throw err;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
+      setError(
+        err instanceof Error ? err.message : "No se pudo iniciar sesión"
+      );
     } finally {
       setAuthBusy(false);
     }
@@ -365,7 +366,6 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <ThemeToggle />
             {isSignedIn && loadingData && (
               <span className="text-xs text-slate-500 dark:text-zinc-400">
                 Actualizando datos...
@@ -444,8 +444,7 @@ export default function Dashboard() {
                     Cuentas
                   </h2>
                   <span className="text-sm text-slate-500 dark:text-zinc-400">
-                    Total:{" "}
-                    {formatMoney(totalSaldo, cuentas[0]?.moneda ?? "")}
+                    Total: {formatMoney(totalSaldo, cuentas[0]?.moneda ?? "")}
                   </span>
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-3">
@@ -663,10 +662,10 @@ export default function Dashboard() {
           </>
         )}
       </div>
-{
-  //Modal para poder mostrar las categorais
-}      
-<Modal
+      {
+        //Modal para poder mostrar las categorais
+      }
+      <Modal
         open={showCatModal}
         onClose={() => setShowCatModal(false)}
         title="Nueva categoria"

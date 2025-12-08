@@ -6,6 +6,7 @@ import { NavBar } from "@/components/NavBar";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { ThemeSurface } from "@/components/ThemeSurface";
 import { AppDataProvider } from "@/components/AppDataProvider";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,6 +37,9 @@ export default function RootLayout({
           <ThemeSurface>
             <AppDataProvider>
               <div className="min-h-screen pb-24">{children}</div>
+              <div className="fixed bottom-6 right-6 z-40">
+                <ThemeToggle />
+              </div>
               <NavBar />
             </AppDataProvider>
           </ThemeSurface>

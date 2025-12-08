@@ -188,7 +188,7 @@ export default function TransaccionesPage() {
         {error && (
           <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
             {error}
-            <button className="ml-2 text-xs underline" onClick={() => setError(null)}>
+            <button className="ml-2 text-xs underline" onClick={() => setEditError(null)}>
               cerrar
             </button>
           </div>

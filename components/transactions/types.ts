@@ -33,6 +33,7 @@ export type TxForm = {
   direccion: "ENTRADA" | "SALIDA";
   descripcion: string;
   categoriaId?: string;
+  categoriaIds?: string[]; // soporte para varias categorías
   ocurrioEn?: string;
 };
 
@@ -57,4 +58,15 @@ export type Transaccion = {
     moneda: string;
   };
   categoria?: Categoria | null;
+  categorias?: Categoria[];
+};
+type DireccionUI = "ENTRADA" | "SALIDA";
+
+export type TarjetaMovimientoUI = {
+  id: string;
+  monto: number;
+  descripcion?: string | null;
+  ocurrioEn: string;
+  tipo: "COMPRA" | "PAGO" | "INTERES" | "CUOTA" | "AJUSTE";
+  transaccion?: { direccion: DireccionUI } | null;
 };
