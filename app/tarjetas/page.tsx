@@ -29,7 +29,7 @@ export default function TarjetasPage() {
     cuentaId: "",
     moneda: "COP",
     cupoTotal: 0,
-    tasaEfectivaAnual: 0.0,
+    tasaEfectivaAnual: 0,
     diaCorte: 1,
     diaPago: 10,
   });
@@ -61,10 +61,17 @@ export default function TarjetasPage() {
 
   const handleSubmit = async () => {
     if (!accessToken) return;
+    if (!form.nombre || !form.cuentaId) {
+      setError("Nombre y cuenta son obligatorios");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await TarjetaService.crear(form, { accessToken });
+      await TarjetaService.crear(
+        { ...form, cupoTotal: Number(form.cupoTotal ?? 0) },
+        { accessToken },
+      );
       setShowModal(false);
       setForm((prev) => ({ ...prev, nombre: "", cuentaId: "", cupoTotal: 0 }));
       await loadTarjetas();
@@ -79,14 +86,18 @@ export default function TarjetasPage() {
     () => tarjetas.reduce((acc, t) => acc + Number(t.saldoActual ?? 0), 0),
     [tarjetas],
   );
+  const totalCupo = useMemo(
+    () => tarjetas.reduce((acc, t) => acc + Number(t.cupoTotal ?? 0), 0),
+    [tarjetas],
+  );
 
   return (
     <div className="min-h-screen px-6 py-10 text-slate-900 dark:text-zinc-50">
       <div className="mx-auto flex max-w-5xl flex-col gap-6">
-        <header className="flex items-center justify-between">
+        <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-sky-500">Tarjetas</p>
-            <h1 className="text-3xl font-semibold">Tarjetas de crédito</h1>
+            <h1 className="text-3xl font-semibold">Tarjetas de credito</h1>
             <p className="text-sm text-slate-600 dark:text-zinc-400">
               Gestiona cupo, saldo, intereses y movimientos.
             </p>
@@ -105,36 +116,56 @@ export default function TarjetasPage() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow dark:border-white/10 dark:bg-black/30">
-          <p className="text-sm text-slate-600 dark:text-zinc-400">
-            Total saldo tarjetas: {formatMoney(totalSaldo, tarjetas[0]?.moneda ?? "COP")}
-          </p>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow dark:border-white/10 dark:bg-black/30">
+            <p className="text-sm text-slate-500">Saldo utilizado</p>
+            <p className="text-2xl font-semibold">
+              {formatMoney(totalSaldo, tarjetas[0]?.moneda ?? "COP")}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow dark:border-white/10 dark:bg-black/30">
+            <p className="text-sm text-slate-500">Cupo agregado</p>
+            <p className="text-2xl font-semibold">
+              {formatMoney(totalCupo, tarjetas[0]?.moneda ?? "COP")}
+            </p>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {tarjetas.map((t) => (
-            <a
-              key={t.id}
-              href={`/tarjetas/${t.id}`}
-              className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow transition hover:-translate-y-1 hover:shadow-lg dark:border-white/10 dark:bg-black/30"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-lg font-semibold">{t.nombre}</p>
-                  <p className="text-xs text-slate-500">{t.emisor ?? "Emisor"}</p>
+          {tarjetas.map((t) => {
+            const utilizado = Number(t.saldoActual ?? 0);
+            const cupo = Number(t.cupoTotal ?? 0);
+            const usagePct = cupo > 0 ? Math.min((utilizado / cupo) * 100, 120) : 0;
+            return (
+              <a
+                key={t.id}
+                href={`/tarjetas/${t.id}`}
+                className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow transition hover:-translate-y-1 hover:shadow-lg dark:border-white/10 dark:bg-black/30"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-lg font-semibold">{t.nombre}</p>
+                    <p className="text-xs text-slate-500">{t.emisor ?? "Emisor"}</p>
+                  </div>
+                  <div className="text-right text-sm text-slate-500">
+                    Cupo: {formatMoney(cupo, t.moneda)}
+                  </div>
                 </div>
-                <div className="text-right text-sm text-slate-500">
-                  Cupo: {formatMoney(Number(t.cupoTotal ?? 0), t.moneda)}
+                <div className="mt-2 flex items-center justify-between text-sm text-slate-600 dark:text-zinc-300">
+                  <span>Saldo: {formatMoney(utilizado, t.moneda)}</span>
+                  <span className="text-xs text-slate-500">
+                    TEA {t.tasaEfectivaAnual}% | Corte {t.diaCorte} | Pago {t.diaPago}
+                  </span>
                 </div>
-              </div>
-              <div className="mt-2 text-sm text-slate-600 dark:text-zinc-300">
-                Saldo: {formatMoney(Number(t.saldoActual ?? 0), t.moneda)}
-              </div>
-              <div className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
-                TEA: {t.tasaEfectivaAnual}% · Corte: {t.diaCorte} · Pago: {t.diaPago}
-              </div>
-            </a>
-          ))}
+                <div className="mt-3 h-2 w-full rounded-full bg-slate-100 dark:bg-white/10">
+                  <div
+                    className="h-2 rounded-full bg-sky-500"
+                    style={{ width: `${usagePct}%` }}
+                  />
+                </div>
+              </a>
+            );
+          })}
           {tarjetas.length === 0 && !loading && (
             <p className="text-sm text-slate-500 dark:text-zinc-400">No hay tarjetas creadas.</p>
           )}
@@ -153,13 +184,14 @@ export default function TarjetasPage() {
                 Cerrar
               </button>
             </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 text-sm">
+            <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
               <label className="space-y-1">
                 <span className="text-xs text-slate-500">Nombre</span>
                 <input
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
                   value={form.nombre}
                   onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
+                  placeholder="Visa banco X"
                 />
               </label>
               <label className="space-y-1">
@@ -184,6 +216,7 @@ export default function TarjetasPage() {
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
                   value={form.emisor ?? ""}
                   onChange={(e) => setForm((f) => ({ ...f, emisor: e.target.value }))}
+                  placeholder="Banco / franquicia"
                 />
               </label>
               <label className="space-y-1">
@@ -193,6 +226,7 @@ export default function TarjetasPage() {
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
                   value={form.cupoTotal as number}
                   onChange={(e) => setForm((f) => ({ ...f, cupoTotal: Number(e.target.value) }))}
+                  placeholder="5000000"
                 />
               </label>
               <label className="space-y-1">
@@ -204,10 +238,11 @@ export default function TarjetasPage() {
                   onChange={(e) =>
                     setForm((f) => ({ ...f, tasaEfectivaAnual: Number(e.target.value) }))
                   }
+                  placeholder="38"
                 />
               </label>
               <label className="space-y-1">
-                <span className="text-xs text-slate-500">Día de corte</span>
+                <span className="text-xs text-slate-500">Dia de corte</span>
                 <input
                   type="number"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
@@ -216,7 +251,7 @@ export default function TarjetasPage() {
                 />
               </label>
               <label className="space-y-1">
-                <span className="text-xs text-slate-500">Día de pago</span>
+                <span className="text-xs text-slate-500">Dia de pago</span>
                 <input
                   type="number"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"

@@ -49,7 +49,7 @@ export default function Landing() {
             href="/dashboard"
             className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
           >
-            Iniciar sesin
+            Iniciar sesion
           </Link>
         </div>
       </div>

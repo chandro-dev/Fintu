@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Session } from "@supabase/supabase-js";
 import { supabaseClient } from "@/lib/supabaseClient";
 import { formatMoney } from "@/lib/formatMoney";
@@ -14,13 +15,14 @@ import {
 import { InputField, SelectField } from "@/components/ui/Fields";
 import { useCachedResource } from "@/lib/useCachedResource";
 import { TransaccionService } from "@/lib/services/TransaccionService";
-//Template para una categoria
+import { Loading } from "@/components/ui/Loading";
+
 type CategoriaForm = {
   nombre: string;
   tipo: "INGRESO" | "GASTO" | "TRANSFERENCIA";
   color?: string;
 };
-// Transaccion Vacia "Template"
+
 const emptyTx: TxForm = {
   cuentaId: "",
   monto: 0,
@@ -29,7 +31,6 @@ const emptyTx: TxForm = {
   ocurrioEn: ""
 };
 
-//Template para una categoria Vacia
 const emptyCategoria: CategoriaForm = {
   nombre: "",
   tipo: "GASTO",
@@ -38,6 +39,7 @@ const emptyCategoria: CategoriaForm = {
 
 export default function Dashboard() {
   const nowLocal = useMemo(() => new Date().toISOString().slice(0, 16), []);
+  const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
   const [txForm, setTxForm] = useState<TxForm>(emptyTx);
@@ -45,20 +47,21 @@ export default function Dashboard() {
     useState<CategoriaForm>(emptyCategoria);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [authBusy, setAuthBusy] = useState(false);
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
   const [showTxModal, setShowTxModal] = useState(false);
   const [showCatModal, setShowCatModal] = useState(false);
   const [editingTxId, setEditingTxId] = useState<string | null>(null);
 
-  //Acceso al token
   const isSignedIn = useMemo(
     () => Boolean(session?.access_token),
     [session?.access_token]
   );
 
-  //Obtener la session del usuario
+  useEffect(() => {
+    if (!loadingSession && !isSignedIn) {
+      router.replace("/login");
+    }
+  }, [isSignedIn, loadingSession, router]);
+
   useEffect(() => {
     supabaseClient.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -72,7 +75,6 @@ export default function Dashboard() {
     return () => data.subscription.unsubscribe();
   }, []);
 
-  //Uso del token JWT
   const accessToken = session?.access_token;
   const authHeaders = useMemo(
     () =>
@@ -87,7 +89,6 @@ export default function Dashboard() {
 
   const userKey = session?.user?.id ?? "anon";
 
-  //Uso de de cuentas caheado.
   const {
     data: cuentas = [],
     loading: loadingCuentas,
@@ -105,7 +106,6 @@ export default function Dashboard() {
     { refreshOnMount: false }
   );
 
-  //Uso de cache con respecto a las categorias.
   const {
     data: categorias = [],
     loading: loadingCategorias,
@@ -123,7 +123,6 @@ export default function Dashboard() {
     { refreshOnMount: false }
   );
 
-  //Uso de cache a la hora de traer las transacciones.
   const {
     data: txs = [],
     loading: loadingTxs,
@@ -167,38 +166,6 @@ export default function Dashboard() {
       ? displayError.message
       : displayError?.toString() ?? null;
 
-  const signInWithGoogle = async () => {
-    setError(null);
-    const { error: err } = await supabaseClient.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${window.location.origin}/dashboard` }
-    });
-    if (err) setError(err.message);
-  };
-
-  const signInWithEmail = async () => {
-    if (!loginEmail.trim() || !loginPassword.trim()) {
-      setError("Email y password son obligatorios");
-      return;
-    }
-    setAuthBusy(true);
-    setError(null);
-    try {
-      const { error: err } = await supabaseClient.auth.signInWithPassword({
-        email: loginEmail.trim(),
-        password: loginPassword
-      });
-      if (err) throw err;
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "No se pudo iniciar sesión"
-      );
-    } finally {
-      setAuthBusy(false);
-    }
-  };
-
-  //Registro con email
   const signOut = async () => {
     await supabaseClient.auth.signOut();
     setSession(null);
@@ -207,13 +174,12 @@ export default function Dashboard() {
     invalidateCuentas();
     invalidateCategorias();
     invalidateTxs();
+    router.replace("/login");
   };
 
   const saveTx = async () => {
-    console.log("Llegue aqui");
     if (!accessToken) return setError("No hay sesion activa");
     setBusy(true);
-    setError(null);
     try {
       const isEditing = Boolean(editingTxId);
       if (isEditing) {
@@ -239,7 +205,6 @@ export default function Dashboard() {
     if (!targetId) return;
     if (!accessToken) return setError("No hay sesion activa");
     setBusy(true);
-    setError(null);
     try {
       await TransaccionService.eliminar(targetId, { accessToken });
       setTxForm(emptyTx);
@@ -264,7 +229,6 @@ export default function Dashboard() {
     if (validation) return setError(validation);
     if (!accessToken) return setError("No hay sesion activa");
     setBusy(true);
-    setError(null);
     try {
       const res = await fetch("/api/categorias", {
         method: "POST",
@@ -307,7 +271,7 @@ export default function Dashboard() {
   const flowByMonth = useMemo(() => {
     const map = new Map<string, { ingresos: number; egresos: number }>();
     txs.forEach((tx) => {
-      const key = new Date(tx.ocurrioEn).toISOString().slice(0, 7); // YYYY-MM
+      const key = new Date(tx.ocurrioEn).toISOString().slice(0, 7);
       const current = map.get(key) ?? { ingresos: 0, egresos: 0 };
       if (tx.direccion === "ENTRADA") current.ingresos += Number(tx.monto);
       else current.egresos += Number(tx.monto);
@@ -317,6 +281,7 @@ export default function Dashboard() {
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-4);
   }, [txs]);
+
   const saldoPorTipoCuenta = useMemo(() => {
     const map = new Map<string, { nombre: string; total: number }>();
     cuentas.forEach((c) => {
@@ -328,6 +293,7 @@ export default function Dashboard() {
     });
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
   }, [cuentas]);
+
   const gastosPorCategoria = useMemo(() => {
     const map = new Map<
       string,
@@ -349,6 +315,27 @@ export default function Dashboard() {
       .sort((a, b) => b.total - a.total)
       .slice(0, 4);
   }, [txs]);
+
+  if (loadingSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-sm text-slate-700 dark:text-zinc-300">
+          Cargando sesion...
+        </p>
+      </div>
+    );
+  }
+
+  if (!isSignedIn) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-sm text-slate-700 dark:text-zinc-300">
+          Redirigiendo al login...
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen">
       <div className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-10 text-slate-900 dark:text-zinc-50">
@@ -366,169 +353,136 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {isSignedIn && loadingData && (
+            {loadingData && (
               <span className="text-xs text-slate-500 dark:text-zinc-400">
                 Actualizando datos...
               </span>
             )}
-            {loadingSession && (
-              <span className="text-sm text-zinc-460">Cargando sesion...</span>
-            )}
-            {!isSignedIn && !loadingSession && (
-              <div className="flex flex-col items-end gap-2 text-sm text-slate-600 dark:text-zinc-300">
-                <div className="flex gap-2">
-                  <input
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm text-slate-900 shadow-sm dark:border-white/10 dark:bg-black/30 dark:text-white"
-                    placeholder="Email"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                  />
-                  <input
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm text-slate-900 shadow-sm dark:border-white/10 dark:bg-black/30 dark:text-white"
-                    placeholder="Password"
-                    type="password"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                  />
-                  <button
-                    onClick={signInWithEmail}
-                    disabled={authBusy}
-                    className="rounded-full bg-slate-900 px-4 py-1 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-                  >
-                    {authBusy ? "Ingresando..." : "Entrar"}
-                  </button>
-                  <button
-                    onClick={signInWithGoogle}
-                    className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-900 hover:bg-slate-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
-                  >
-                    Google
-                  </button>
-                </div>
-                <span className="text-[11px] text-slate-500 dark:text-zinc-400">
-                  Accede con tu cuenta o Google para cargar tus datos.
-                </span>
-              </div>
-            )}
-            {isSignedIn && (
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-950 dark:text-zinc-300">
-                  {session?.user.email ?? "Usuario"}
-                </span>
-                <button
-                  onClick={signOut}
-                  className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-900 hover:bg-slate-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
-                >
-                  Salir
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-950 dark:text-zinc-300">
+                {session?.user.email ?? "Usuario"}
+              </span>
+              <button
+                onClick={signOut}
+                className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-900 hover:bg-slate-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
+              >
+                Salir
+              </button>
+            </div>
           </div>
         </header>
 
-        {!isSignedIn ? (
-          <section className="rounded-2xl border border-black/5 bg-white/70 p-8 text-sm text-slate-700 shadow-lg backdrop-blur dark:border-white/10 dark:bg-white/5 dark:text-zinc-200"></section>
-        ) : (
-          <>
-            {errorMessage && (
-              <div className="rounded-xl border border-amber-500/40 bg-amber-100 px-4 py-3 text-sm text-amber-900 shadow dark:bg-amber-500/10 dark:text-amber-100">
-                {errorMessage}{" "}
-                <button className="underline" onClick={() => setError(null)}>
-                  cerrar
-                </button>
-              </div>
-            )}
-            <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-              <div className="rounded-2xl border border-slate-500/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5 dark:shadow-[0_10px_40px_rgba(0,0,0,0.4)]">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-                    Cuentas
-                  </h2>
-                  <span className="text-sm text-slate-500 dark:text-zinc-400">
-                    Total: {formatMoney(totalSaldo, cuentas[0]?.moneda ?? "")}
-                  </span>
-                </div>
-                <div className="mt-4 grid grid-cols-1 gap-3">
-                  {cuentas.map((c) => (
-                    <a
-                      key={c.id}
-                      href={`/cuentas/${c.id}`}
-                      className="rounded-xl border border-slate-500/80 bg-white p-4 shadow-md transition hover:-translate-y-1 hover:shadow-lg dark:border-white/10 dark:bg-black/30 dark:shadow-[0_4px_24px_rgba(0,0,0,0.4)]"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                            {c.nombre}
-                          </p>
-                          <p className="text-sm text-zinc-400">
-                            {c.tipoCuenta?.nombre ?? c.tipoCuentaId}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xl font-semibold text-emerald-300">
-                            {formatMoney(Number(c.saldo ?? 0), c.moneda)}
-                          </p>
-                          {c.tasaApr && (
-                            <p className="text-xs text-zinc-400">
-                              {c.tasaApr}% APR
-                            </p>
-                          )}
-                        </div>
+        {errorMessage && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-100 px-4 py-3 text-sm text-amber-900 shadow dark:bg-amber-500/10 dark:text-amber-100">
+            {errorMessage}{" "}
+            <button className="underline" onClick={() => setError(null)}>
+              cerrar
+            </button>
+          </div>
+        )}
+
+        <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="rounded-2xl border border-slate-500/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5 dark:shadow-[0_10px_40px_rgba(0,0,0,0.4)]">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                Cuentas
+              </h2>
+              <span className="text-sm text-slate-500 dark:text-zinc-400">
+                Total: {formatMoney(totalSaldo, cuentas[0]?.moneda ?? "")}
+              </span>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3">
+              {loadingData && cuentas.length === 0 ? (
+                <Loading message="Cargando tu información financiera..." />
+              ) : (
+                cuentas.map((c) => (
+                  <a
+                    key={c.id}
+                    href={`/cuentas/${c.id}`}
+                    className="rounded-xl border border-slate-500/80 bg-white p-4 shadow-md transition hover:-translate-y-1 hover:shadow-lg dark:border-white/10 dark:bg-black/30 dark:shadow-[0_4px_24px_rgba(0,0,0,0.4)]"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                          {c.nombre}
+                        </p>
+                        <p className="text-sm text-zinc-400">
+                          {c.tipoCuenta?.nombre ?? c.tipoCuentaId}
+                        </p>
                       </div>
-                    </a>
-                  ))}
-                  {cuentas.length === 0 && (
-                    <p className="text-sm text-zinc-400">
-                      Crea tu primera cuenta.
-                    </p>
-                  )}
-                </div>
-                <div className="mt-4 text-sm text-slate-600 dark:text-zinc-400">
-                  Selecciona una cuenta para ver detalle y transacciones en la
-                  sección de Cuentas.
-                </div>
-              </div>
+                      <div className="text-right">
+                        <p className="text-xl font-semibold text-emerald-300">
+                          {formatMoney(Number(c.saldo ?? 0), c.moneda)}
+                        </p>
+                        {c.tasaApr && (
+                          <p className="text-xs text-zinc-400">
+                            {c.tasaApr}% APR
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </a>
+                ))
+              )}
+              {cuentas.length === 0 && (
+                <p className="text-sm text-zinc-400">Crea tu primera cuenta.</p>
+              )}
+            </div>
+            <div className="mt-4 text-sm text-slate-600 dark:text-zinc-400">
+              Selecciona una cuenta para ver detalle y transacciones en la
+              seccion de Cuentas.
+            </div>
+          </div>
 
-              <div className="rounded-2xl border border-slate-500/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5 dark:shadow-[0_10px_40px_rgba(0,0,0,0.4)]">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-                    Categorias
-                  </h2>
-                  <span className="text-sm text-slate-500 dark:text-zinc-400">
-                    {categorias.length} definidas
+          <div className="rounded-2xl border border-slate-500/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5 dark:shadow-[0_10px_40px_rgba(0,0,0,0.4)]">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                Categorias
+              </h2>
+              <span className="text-sm text-slate-500 dark:text-zinc-400">
+                {categorias.length} definidas
+              </span>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {loadingData && categorias.length === 0 ? (
+                <Loading message="Cargando tu información financiera..." />
+              ) : (
+                categorias.map((cat) => (
+                  <span
+                    key={cat.id}
+                    className="rounded-full px-3 py-1 text-xs font-semibold"
+                    style={{
+                      background: cat.color ?? "rgba(255,255,255,0.08)",
+                      color: "#0a0a0a"
+                    }}
+                  >
+                    {cat.nombre} / {cat.tipo}
                   </span>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {categorias.map((cat) => (
-                    <span
-                      key={cat.id}
-                      className="rounded-full px-3 py-1 text-xs font-semibold"
-                      style={{
-                        background: cat.color ?? "rgba(255,255,255,0.08)",
-                        color: "#0a0a0a"
-                      }}
-                    >
-                      {cat.nombre} · {cat.tipo}
-                    </span>
-                  ))}
-                  {categorias.length === 0 && (
-                    <p className="text-sm text-zinc-400">
-                      Crea tu primera categoria.
-                    </p>
-                  )}
-                </div>
-                <button
-                  onClick={() => setShowCatModal(true)}
-                  className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 dark:text-white"
-                >
-                  Nueva categoria
-                </button>
-              </div>
+                ))
+              )}
+              {categorias.length === 0 && (
+                <p className="text-sm text-zinc-400">
+                  Crea tu primera categoria.
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setShowCatModal(true)}
+              className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 dark:text-white"
+            >
+              Nueva categoria
+            </button>
+          </div>
 
-              <div className="rounded-2xl border border-slate-500/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5 dark:shadow-[0_10px_40px_rgba(0,0,0,0.4)]">
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-                  Resumen
-                </h2>
-                <div className="mt-4 grid grid-cols-1 gap-3">
+          <div className="rounded-2xl border border-slate-500/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5 dark:shadow-[0_10px_40px_rgba(0,0,0,0.4)]">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+              Resumen
+            </h2>
+            <div className="mt-4 grid grid-cols-1 gap-3">
+              {loadingData && saldoPorTipoCuenta.length === 0 ? (
+                <Loading message="Cargando tu información financiera..." />
+              ) : (
+                <>
                   <StatCard
                     label="Ingresos"
                     value={totals.ingresos}
@@ -544,127 +498,144 @@ export default function Dashboard() {
                     value={totals.neto}
                     color="text-sky-300"
                   />
-                </div>
-                <button
-                  onClick={() => {
-                    setEditingTxId(null);
-                    setTxForm({ ...emptyTx, ocurrioEn: nowLocal });
-                    setShowTxModal(true);
-                  }}
-                  className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400 dark:text-white"
-                >
-                  Nueva transaccion
-                </button>
-              </div>
-            </section>
+                </>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                setEditingTxId(null);
+                setTxForm({ ...emptyTx, ocurrioEn: nowLocal });
+                setShowTxModal(true);
+              }}
+              className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400 dark:text-white"
+            >
+              Nueva transaccion
+            </button>
+          </div>
+        </section>
 
-            <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-              <div className="rounded-2xl border-slate-500/80 border bg-white/80 p-6 shadow dark:border-white/10 dark:bg-white/5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-                    Flujo ultimos meses
-                  </h2>
-                  <span className="text-xs text-zinc-400">
-                    Ingresos vs egresos
-                  </span>
-                </div>
+        <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="rounded-2xl border-slate-500/80 border bg-white/80 p-6 shadow dark:border-white/10 dark:bg-white/5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                Flujo ultimos meses
+              </h2>
+              <span className="text-xs text-zinc-400">Ingresos vs egresos</span>
+            </div>
+            {loadingData && saldoPorTipoCuenta.length === 0 ? (
+              <Loading message="Cargando tu información financiera..." />
+            ) : (
+              <>
                 <div className="mt-4">
                   <FlowChart data={flowByMonth} />
                 </div>
-              </div>
-              <div className="rounded-2xl border border-slate-500/80 bg-white/80 p-6 shadow dark:border-white/10 dark:bg-white/5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-                    Gasto por categoria
-                  </h2>
-                  <span className="text-xs text-zinc-400">Top 4</span>
-                </div>
-                <div className="mt-4 space-y-3">
-                  {gastosPorCategoria.length === 0 && (
-                    <p className="text-sm text-zinc-400">Aun no hay gastos.</p>
-                  )}
-                  {gastosPorCategoria.map((cat) => (
-                    <CategoryBar
-                      key={cat.nombre}
-                      label={cat.nombre}
-                      value={cat.total}
-                      maxValue={gastosPorCategoria[0]?.total ?? 1}
-                      color={cat.color ?? "#0ea5e9"}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-slate-500/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5 dark:shadow-[0_10px_40px_rgba(0,0,0,0.4)]">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-                    Saldo por tipo
-                  </h2>
-                  <span className="text-xs text-zinc-400">
-                    {saldoPorTipoCuenta.length} tipos
-                  </span>
-                </div>
-                <div className="mt-4 space-y-3">
-                  {saldoPorTipoCuenta.length === 0 && (
-                    <p className="text-sm text-zinc-400">
-                      No hay cuentas creadas.
-                    </p>
-                  )}
-                  {saldoPorTipoCuenta.map((item) => (
-                    <DonutRow
-                      key={item.nombre}
-                      label={item.nombre}
-                      value={item.total}
-                      total={totalSaldo || 1}
-                    />
-                  ))}
-                </div>
-              </div>
-            </section>
+                </>
+            )}
+          </div>
+          <div className="rounded-2xl border border-slate-500/80 bg-white/80 p-6 shadow dark:border-white/10 dark:bg-white/5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                Gasto por categoria
+              </h2>
+              <span className="text-xs text-zinc-400">Top 4</span>
+            </div>
 
-            <section className="rounded-2xl border border-black/5 bg-white/80 p-6 shadow dark:border-white/10 dark:bg-white/5">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-                    Transacciones
-                  </h2>
-                  <p className="text-sm text-zinc-400">Ultimas 50</p>
-                </div>
-              </div>
-              <div className="mt-4 flex flex-col gap-3">
-                {txs.map((tx) => (
-                  <TransactionListItem
-                    key={tx.id}
-                    tx={tx}
-                    onEdit={(selected) => {
-                      setEditingTxId(selected.id);
-                      setTxForm({
-                        cuentaId: selected.cuentaId,
-                        monto: Number(selected.monto),
-                        direccion: selected.direccion,
-                        descripcion: selected.descripcion ?? "",
-                        categoriaId: selected.categoria?.id ?? undefined,
-                        ocurrioEn: new Date(selected.ocurrioEn)
-                          .toISOString()
-                          .slice(0, 16)
-                      });
-                      setShowTxModal(true);
-                    }}
-                    onDelete={deleteTx}
+            <div className="mt-4 space-y-3">
+              {loadingData && gastosPorCategoria.length === 0 ? (
+                <Loading message="Cargando tu información financiera..." />
+              ) : gastosPorCategoria.length === 0 ? (
+                <p className="text-sm text-zinc-400">Aun no hay gastos.</p>
+              ) : (
+                gastosPorCategoria.map((cat) => (
+                  <CategoryBar
+                    key={cat.nombre}
+                    label={cat.nombre}
+                    value={cat.total}
+                    maxValue={gastosPorCategoria[0]?.total ?? 1}
+                    color={cat.color ?? "#0ea5e9"}
                   />
-                ))}
-                {txs.length === 0 && (
-                  <p className="text-sm dark:text-zinc-400">
-                    Aun no hay transacciones.
+                ))
+              )}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-500/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5 dark:shadow-[0_10px_40px_rgba(0,0,0,0.4)]">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                Saldo por tipo
+              </h2>
+              <span className="text-xs text-zinc-400">
+                {saldoPorTipoCuenta.length} tipos
+              </span>
+            </div>
+            <div className="mt-4 space-y-3">
+              {loadingData && saldoPorTipoCuenta.length === 0 ? (
+                <Loading message="Cargando tu información financiera..." />
+              ) : (
+                saldoPorTipoCuenta.length === 0 && (
+                  <p className="text-sm text-zinc-400">
+                    No hay cuentas creadas.
                   </p>
-                )}
-              </div>
-            </section>
-          </>
-        )}
+                )
+              )}
+              {saldoPorTipoCuenta.map((item) => (
+                <DonutRow
+                  key={item.nombre}
+                  label={item.nombre}
+                  value={item.total}
+                  total={totalSaldo || 1}
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-black/5 bg-white/80 p-6 shadow dark:border-white/10 dark:bg-white/5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                Transacciones
+              </h2>
+              <p className="text-sm text-zinc-400">Ultimas 50</p>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-col gap-3">
+            {loadingData && txs.length === 0 ? (
+              <Loading message="Cargando tu información financiera..." />
+            ) : (
+              txs.map((tx) => (
+                <TransactionListItem
+                  key={tx.id}
+                  tx={tx}
+                  onEdit={(selected) => {
+                    setEditingTxId(selected.id);
+                    setTxForm({
+                      cuentaId: selected.cuentaId,
+                      monto: Number(selected.monto),
+                      direccion: selected.direccion,
+                      descripcion: selected.descripcion ?? "",
+                      categoriaId: selected.categoria?.id ?? undefined,
+                      ocurrioEn: new Date(selected.ocurrioEn)
+                        .toISOString()
+                        .slice(0, 16)
+                    });
+                    setShowTxModal(true);
+                  }}
+                  onDelete={deleteTx}
+                />
+              ))
+            )}
+            {loadingData && txs.length === 0 ? (
+              <Loading message="Cargando tu información financiera..." />
+            ) : (
+              txs.length === 0 && (
+                <p className="text-sm dark:text-zinc-400">
+                  Aun no hay transacciones.
+                </p>
+              )
+            )}
+          </div>
+        </section>
       </div>
-      {
-        //Modal para poder mostrar las categorais
-      }
       <Modal
         open={showCatModal}
         onClose={() => setShowCatModal(false)}
@@ -791,7 +762,7 @@ function Modal({
     </div>
   );
 }
-//Relleno efectos especiales.
+
 function FlowChart({
   data
 }: {

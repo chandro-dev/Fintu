@@ -10,6 +10,7 @@ export function InputField({
   placeholder,
   inputMode,
   autoFocus,
+  disabled,
 }: {
   label: string;
   value: string;
@@ -18,6 +19,7 @@ export function InputField({
   placeholder?: string;
   inputMode?: React.InputHTMLAttributes<HTMLInputElement>["inputMode"];
   autoFocus?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm text-slate-700 dark:text-zinc-300">
@@ -29,6 +31,7 @@ export function InputField({
         placeholder={placeholder}
         inputMode={inputMode}
         autoFocus={autoFocus}
+        disabled={disabled}
         className="rounded-lg border border-black/10 bg-white/80 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 dark:border-white/10 dark:bg-black/40 dark:text-white dark:focus:border-white/30"
       />
     </label>
