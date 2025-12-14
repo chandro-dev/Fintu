@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/supabaseAdmin";
-
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 // GET /api/categorias -> lista categorías del usuario
 export async function GET(request: Request) {
   const user = await getUserFromRequest(request);

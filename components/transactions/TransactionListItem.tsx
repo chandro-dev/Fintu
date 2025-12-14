@@ -1,7 +1,17 @@
 "use client";
 
+import { useMemo } from "react";
 import { Transaccion } from "./types";
 import { formatMoney } from "@/lib/formatMoney";
+import {
+  Pencil,
+  Trash2,
+  Wallet,
+  Tag,
+  CalendarClock,
+  ArrowDownRight,
+  ArrowUpRight
+} from "lucide-react";
 
 type Props = {
   tx: Transaccion;
@@ -10,50 +20,108 @@ type Props = {
 };
 
 export function TransactionListItem({ tx, onEdit, onDelete }: Props) {
+  // Lógica de presentación
   const isEntrada = tx.direccion === "ENTRADA";
   const montoAbs = Math.abs(Number(tx.monto) || 0);
-  const chipClass = isEntrada ? "bg-emerald-500/15 text-emerald-500 dark:text-emerald-200" : "bg-rose-500/15 text-rose-400 dark:text-rose-200";
+
+  // Formateo de fecha más limpio (Ej: "14 oct, 15:30")
+  const fechaFormateada = useMemo(() => {
+    const date = tx.ocurrioEn ? new Date(tx.ocurrioEn) : new Date();
+    return new Intl.DateTimeFormat("es-ES", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(date);
+  }, [tx.ocurrioEn]);
+
+  // Colores dinámicos para el monto
+  const amountClass = isEntrada
+    ? "text-emerald-600 dark:text-emerald-400"
+    : "text-slate-900 dark:text-slate-100";
+
+  // Color de fondo para el icono de categoría
+  const categoryColor = tx.categoria?.color || "#71717a"; // Zinc-500 default
 
   return (
-    <div className="rounded-xl border border-black/5 bg-white/80 p-4 shadow dark:border-white/10 dark:bg-black/30">
-      <div className="grid gap-2 rounded-2xl border border-black/10 bg-white/80 p-3 text-xs text-slate-700 shadow-sm dark:border-white/10 dark:bg-black/50 dark:text-zinc-300">
-        <div className="flex items-center justify-between">
-          <span className="text-[0.9rem] uppercase tracking-wide text-zinc-400">💳 {tx.cuenta?.nombre ?? tx.cuentaId}</span>
-          <span
-            className={
-              "rounded-full px-2 py-1 text-xl font-semibold " + chipClass
-            }
-          >
-            {isEntrada ? "+" : "-"}
-            {formatMoney(montoAbs, tx.moneda)}
+    <div className="group relative flex items-center gap-4 rounded-2xl border border-transparent bg-white p-4 transition-all hover:border-slate-200 hover:shadow-md dark:bg-white/5 dark:hover:border-white/10 dark:hover:bg-white/10">
+      {/* 1. ICONO VISUAL (Izquierda) */}
+      <div
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-sm ring-1 ring-black/5"
+        style={{
+          backgroundColor: `${categoryColor}20`, // 20 = 12% opacidad hex
+          color: categoryColor
+        }}
+      >
+        {isEntrada ? <ArrowDownRight size={24} /> : <ArrowUpRight size={24} />}
+      </div>
+
+      {/* 2. DETALLES (Centro) */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Descripción / Título */}
+        <div className="flex items-center gap-2">
+          <p className="truncate font-semibold text-slate-900 dark:text-zinc-100">
+            {tx.descripcion || "Sin descripción"}
+          </p>
+          {tx.categoria && (
+            <span
+              className="hidden rounded-full px-1.5 py-0.5 text-[10px] font-medium opacity-70 sm:inline-block"
+              style={{
+                backgroundColor: `${categoryColor}30`,
+                color: categoryColor
+              }}
+            >
+              {tx.categoria.nombre}
+            </span>
+          )}
+        </div>
+
+        {/* Metadatos: Cuenta y Fecha */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-zinc-400">
+          <span className="flex items-center gap-1" title="Cuenta">
+            <Wallet size={12} className="opacity-70" />
+            {tx.cuenta?.nombre || "Cuenta desconocida"}
+          </span>
+          <span className="h-1 w-1 rounded-full bg-slate-300 dark:bg-zinc-600" />
+          <span className="flex items-center gap-1" title="Fecha">
+            <CalendarClock size={12} className="opacity-70" />
+            {fechaFormateada}
           </span>
         </div>
+      </div>
 
-        <div className="flex flex-wrap gap-2 text-[1.0rem]">
-          {tx.cuenta && <span className="rounded-full bg-zinc-800/70 px-2 py-0.5 text-zinc-200">🏦 {tx.cuenta.nombre}</span>}
-          {tx.categoria && <span className="rounded-full bg-zinc-800/70 px-2 py-0.5 text-zinc-300">🏷️ {tx.categoria.nombre}</span>}
-        </div>
+      {/* 3. MONTO Y ACCIONES (Derecha) */}
+      <div className="flex flex-col items-end gap-1">
+        {/* Monto */}
+        <span
+          className={`font-mono text-base font-bold tracking-tight ${amountClass}`}
+        >
+          {isEntrada ? "+" : "-"} {formatMoney(montoAbs, tx.moneda)}
+        </span>
 
-        <div className="text-zinc-200 text-sm">{tx.descripcion || "Sin descripcion"}</div>
-
-        <div className="text-[1.0rem] text-zinc-500">
-          {tx.ocurrioEn ? new Date(tx.ocurrioEn).toLocaleString() : new Date().toLocaleString()}
-        </div>
-        <div className="mt-3 flex gap-2">
+        {/* Botones de Acción (Visibles en hover o en móvil si se ajusta CSS) */}
+        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <button
-            onClick={() => onEdit(tx)}
-            className="rounded-full border border-sky-400/50 px-3 py-1 text-sm font-semibold text-sky-200 hover:bg-sky-500/20"
-            title="Editar transacción"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(tx);
+            }}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-500/20 dark:hover:text-indigo-300"
+            title="Editar"
           >
-            ✏️ Editar
+            <Pencil size={16} />
           </button>
+
           {onDelete && (
             <button
-              onClick={() => onDelete(tx.id)}
-              className="rounded-full border border-red-400/60 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-200 hover:bg-red-500/20"
-              title="Eliminar transacción"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(tx.id);
+              }}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/20 dark:hover:text-rose-300"
+              title="Eliminar"
             >
-              🗑️ Eliminar
+              <Trash2 size={16} />
             </button>
           )}
         </div>
