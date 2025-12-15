@@ -5,7 +5,6 @@ import { Session } from "@supabase/supabase-js";
 import { supabaseClient } from "@/lib/supabaseClient";
 import type { Cuenta, Categoria, Transaccion } from "@/components/transactions/types";
 
-// 1. Tipos de Datos (Mantener el mismo que definimos)
 export type TipoCuenta = {
   id: string;
   codigo: string;
@@ -18,13 +17,11 @@ type AppDataContextValue = {
   loadingData: boolean;
   error: string | null;
   
-  // Datos principales
   cuentas: Cuenta[];
   categorias: Categoria[];
   transacciones: Transaccion[];
   tiposCuenta: TipoCuenta[]; 
   
-  // Acciones
   refresh: (opts?: { force?: boolean }) => Promise<void>;
   invalidate: () => void;
 };
@@ -35,13 +32,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
   
-  // Estados de datos
   const [cuentas, setCuentas] = useState<Cuenta[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [transacciones, setTransacciones] = useState<Transaccion[]>([]);
   const [tiposCuenta, setTiposCuenta] = useState<TipoCuenta[]>([]);
 
-  // Estados de control
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -49,7 +44,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   // --- GESTIÓN DE SESIÓN ---
   useEffect(() => {
-    // Escuchar cambios de autenticación
     supabaseClient.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoadingSession(false);
@@ -63,20 +57,43 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const accessToken = session?.access_token;
 
   // --- FUNCIÓN DE CARGA DE DATOS (REFRESH) ---
+  // 🔴 CORRECCIÓN CLAVE: Eliminamos loaded, loadingData y dirty de dependencias,
+  // y en su lugar usamos las funciones de estado para leer/escribir.
   const refresh = useCallback(
     async (opts?: { force?: boolean }) => {
       if (!accessToken) {
-        // Si no hay token, limpiamos y salimos
         setCuentas([]);
         setCategorias([]);
         setTransacciones([]);
         setTiposCuenta([]);
         setLoaded(false);
+        setDirty(false); // Limpiamos dirty
         return;
       }
       
-      if (loadingData) return;
-      if (!opts?.force && loaded && !dirty) return; // Prevención de recarga innecesaria
+      // Leemos el estado actual *antes* de entrar al bloque asíncrono
+      let currentLoadingData = false;
+      let currentLoaded = false;
+      let currentDirty = false;
+      
+      // Usamos el hook de state para obtener el valor más reciente 
+      // y prevenir ciclos, ya que set* es estable.
+      setLoadingData(prev => { 
+          currentLoadingData = prev;
+          return prev; 
+      });
+      setLoaded(prev => {
+          currentLoaded = prev;
+          return prev;
+      });
+      setDirty(prev => {
+          currentDirty = prev;
+          return prev;
+      });
+
+
+      if (currentLoadingData) return;
+      if (!opts?.force && currentLoaded && !currentDirty) return;
 
       setLoadingData(true);
       setError(null);
@@ -84,7 +101,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const headers = { Authorization: `Bearer ${accessToken}` };
 
       try {
-        // Ejecución paralela de todos los endpoints de datos
         const [cuentasRes, categoriasRes, txRes, tiposRes] = await Promise.all([
           fetch("/api/accounts", { headers }),
           fetch("/api/categorias", { headers }),
@@ -92,9 +108,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           fetch("/api/tipos-cuenta", { headers }),
         ]);
 
-        // Verificación de errores en las respuestas
         if (!cuentasRes.ok || !categoriasRes.ok || !txRes.ok || !tiposRes.ok) {
-          // Intentamos extraer el error del cuerpo si es posible
           const errorDetail = await Promise.race([
             cuentasRes.json().catch(() => null),
             categoriasRes.json().catch(() => null),
@@ -104,7 +118,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           throw new Error(errorDetail?.error || "Error al cargar la información (código 500/401/404)");
         }
 
-        // Actualización atómica del estado (una sola vez)
         const [cuentasData, categoriasData, txData, tiposData] = await Promise.all([
           cuentasRes.json(),
           categoriasRes.json(),
@@ -123,17 +136,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         console.error("Error al refrescar datos:", err);
         setError(err instanceof Error ? err.message : "Error desconocido al cargar");
       } finally {
-        setLoadingData(false);
+        setLoadingData(false); // Garantizamos que loadingData se apague
       }
     },
-    [accessToken, dirty, loaded, loadingData]
+    // 🔴 Dependencia mínima y estable: solo accessToken
+    [accessToken] 
   );
 
-  // --- EFECTO DISPARADOR (MEJORA CRÍTICA) ---
+  // --- EFECTO DISPARADOR ---
+  // Este efecto es estable y solo llama a la función estable 'refresh'.
   useEffect(() => {
     if (accessToken) {
-      // 🔴 Disparo inicial/cambio de usuario: Si el token cambia, forzamos la recarga.
-      // Esto resuelve el problema de tener que cambiar de pestaña.
       refresh({ force: true });
     }
   }, [accessToken, refresh]);
@@ -143,7 +156,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     setDirty(true);
   }, []);
 
-  // --- VALORES DEL CONTEXTO ---
   const value: AppDataContextValue = {
     session,
     loadingSession,
@@ -156,9 +168,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     refresh,
     invalidate,
   };
-
-  // Puedes añadir un indicador visual aquí si quieres:
-  // if (loadingSession) return <div className="loading-screen">Cargando sesión...</div>
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 }

@@ -29,12 +29,12 @@ export function AccountCard({ cuenta, onClick }: Props) {
             </h3>
             <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-zinc-400">
               <span className="uppercase tracking-wider">{cuenta.moneda}</span>
-              {cuenta.institucion && (
+              {cuenta?.institucion && (
                 <>
                   <span>•</span>
                   <span className="flex items-center gap-1">
                     <Building2 size={10} />
-                    {cuenta.institucion}
+                    {cuenta?.institucion}
                   </span>
                 </>
               )}

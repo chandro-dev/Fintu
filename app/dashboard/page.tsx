@@ -26,7 +26,7 @@ import { DonutRow } from "@/components/ui/charts/DonutRow";
 // Tipos
 import { TxForm } from "@/components/transactions/types";
 
-export default function Dashboard() {
+export default function Dashboard() {1212
   const router = useRouter();
 
   // 1. Gestión de Sesión (Mantenida simple aquí, idealmente mover a useAuth)

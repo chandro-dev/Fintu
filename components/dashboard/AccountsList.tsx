@@ -8,7 +8,7 @@ interface AccountsListProps {
   loading: boolean;
 }
 
-export function AccountsList({ cuentas, loading }: AccountsListProps) {
+export  function AccountsList({ cuentas, loading }: AccountsListProps) {
   // 1. Estado de carga inicial
   if (loading && cuentas.length === 0) {
     return (

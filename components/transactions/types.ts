@@ -17,6 +17,7 @@ export type Cuenta = {
   diaPago?: number | null;
   plazoMeses?: number | null;
   limite?: number | null;
+  institucion?:string|null; 
   tipoCuenta?: TipoCuenta | null;
 };
 

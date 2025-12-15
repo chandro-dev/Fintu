@@ -7,7 +7,7 @@ interface SummaryProps {
   onNewTransaction: () => void;
 }
 
-export function SummaryWidget({ ingresos, egresos, neto, onNewTransaction }: SummaryProps) {
+export  function SummaryWidget({ ingresos, egresos, neto, onNewTransaction }: SummaryProps) {
   return (
     <div className="rounded-2xl border border-slate-500/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5">
       <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Resumen</h2>
