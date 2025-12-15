@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { supabaseClient } from "@/lib/supabaseClient";
 import {
   LayoutDashboard,
@@ -14,10 +14,10 @@ import {
   PieChart,
   Menu,
   ChevronLeft,
-  LogOut
+  LogOut,
+  Power
 } from "lucide-react";
 
-// Definimos la estructura de los links con sus iconos asociados
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/cuentas", label: "Cuentas", icon: Wallet },
@@ -30,9 +30,9 @@ const NAV_ITEMS = [
 
 export function NavBar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [isSignedIn, setIsSignedIn] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(true);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false); // Por defecto abierto en desktop
 
   // Detectar sesión
   useEffect(() => {
@@ -41,140 +41,204 @@ export function NavBar() {
     });
     const { data } = supabaseClient.auth.onAuthStateChange((_evt, session) => {
       setIsSignedIn(Boolean(session));
+      if (!session) router.replace("/login");
     });
     return () => data.subscription.unsubscribe();
-  }, []);
+  }, [router]);
 
-  // Detectar si es móvil para ajustar el layout inicial
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, []);
+  const handleSignOut = async () => {
+    await supabaseClient.auth.signOut();
+  };
 
-  if (!isSignedIn || pathname === "/") return null;
+  if (!isSignedIn || pathname === "/" || pathname === "/login") return null;
 
   return (
     <>
-      {/* Spacer para desktop para evitar que el contenido quede debajo del nav fijo */}
+      {/* ============================================================
+          VERSION DESKTOP (Sidebar Lateral)
+          Oculto en 'md' hacia abajo (hidden md:flex)
+      ============================================================= */}
+      
+      {/* Spacer para empujar el contenido principal a la derecha */}
       <div
-        className={`hidden md:block transition-all duration-300 ${
+        className={`hidden md:block shrink-0 transition-[width] duration-300 ease-in-out ${
           isCollapsed ? "w-20" : "w-64"
         }`}
       />
 
-      <nav
+      <aside
         className={`
-          fixed z-50 backdrop-blur-md transition-all duration-300 ease-in-out border border-white/10 shadow-2xl
-          
-          /* Estilos Móvil (Barra Inferior) */
-          bottom-4 left-4 right-4 h-16 rounded-full bg-white/90 dark:bg-zinc-950/80 flex flex-row items-center justify-between px-6
-          
-          /* Estilos Desktop (Sidebar Lateral) */
-          md:top-4 md:bottom-4 md:left-4 md:right-auto md:h-auto md:flex-col md:justify-start md:rounded-3xl md:bg-white md:dark:bg-zinc-950 md:px-3 md:py-6
-          ${isCollapsed ? "md:w-20" : "md:w-64"}
+          hidden md:flex flex-col fixed left-0 top-0 h-screen z-50
+          bg-white dark:bg-zinc-950 border-r border-slate-200 dark:border-white/10
+          transition-[width] duration-300 ease-in-out shadow-sm
+          ${isCollapsed ? "w-20" : "w-64"}
         `}
       >
-        {/* Botón Colapsar (Solo Desktop) */}
-        <div className="hidden md:flex w-full justify-end mb-6 px-1">
+        {/* Header del Sidebar (Logo + Toggle) */}
+        <div className="flex items-center justify-between p-4 h-16 border-b border-slate-100 dark:border-white/5">
+          {!isCollapsed && (
+            <span className="font-bold text-xl tracking-tight text-slate-900 dark:text-white animate-in fade-in duration-300">
+              Fintu<span className="text-sky-500">.</span>
+            </span>
+          )}
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 transition-colors"
+            className={`p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors ${isCollapsed ? "mx-auto" : ""}`}
           >
             {isCollapsed ? <Menu size={20} /> : <ChevronLeft size={20} />}
           </button>
         </div>
 
-        {/* Lista de Enlaces */}
-        <div className="flex w-full flex-row justify-between gap-1 md:flex-col md:justify-start md:gap-2">
-          {NAV_ITEMS.map((item) => {
-            const isActive = pathname.startsWith(item.href);
-            return (
-              <NavLink
-                key={item.href}
-                href={item.href}
-                active={isActive}
-                collapsed={isCollapsed}
-                icon={item.icon}
-                label={item.label}
-              />
-            );
-          })}
+        {/* Lista de Navegación Desktop */}
+        <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1 custom-scrollbar">
+          {NAV_ITEMS.map((item) => (
+            <DesktopNavLink
+              key={item.href}
+              item={item}
+              isActive={pathname.startsWith(item.href)}
+              isCollapsed={isCollapsed}
+            />
+          ))}
         </div>
-      </nav>
+
+        {/* Footer del Sidebar (Usuario / Logout) */}
+        <div className="p-3 border-t border-slate-100 dark:border-white/5">
+          <button
+            onClick={handleSignOut}
+            className={`
+              flex items-center w-full rounded-xl p-3 text-rose-500 
+              hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all duration-200
+              ${isCollapsed ? "justify-center" : "gap-3"}
+            `}
+            title="Cerrar sesión"
+          >
+            <LogOut size={20} />
+            {!isCollapsed && (
+              <span className="text-sm font-medium">Cerrar sesión</span>
+            )}
+          </button>
+        </div>
+      </aside>
+
+      {/* ============================================================
+          VERSION MOVIL (Bottom Dock)
+          Visible solo en 'md' hacia abajo (md:hidden)
+      ============================================================= */}
+      <div className="md:hidden fixed bottom-6 left-4 right-4 z-50 flex justify-center">
+        <nav className="
+          flex items-center gap-1 p-2 rounded-2xl
+          bg-white/90 dark:bg-zinc-950/90 backdrop-blur-xl
+          border border-slate-200/60 dark:border-white/10
+          shadow-2xl shadow-sky-900/10
+          max-w-full overflow-x-auto no-scrollbar
+        ">
+          {NAV_ITEMS.map((item) => (
+            <MobileNavLink
+              key={item.href}
+              item={item}
+              isActive={pathname.startsWith(item.href)}
+            />
+          ))}
+          
+          {/* Separador vertical pequeño */}
+          <div className="w-[1px] h-6 bg-slate-200 dark:bg-white/10 mx-1" />
+          
+          <button
+            onClick={handleSignOut}
+            className="p-3 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+          >
+            <Power size={20} />
+          </button>
+        </nav>
+      </div>
     </>
   );
 }
 
-function NavLink({
-  href,
-  active,
-  collapsed,
-  icon: Icon,
-  label
+// ----------------------------------------------------------------------
+// Componente de Enlace para Desktop
+// ----------------------------------------------------------------------
+function DesktopNavLink({
+  item,
+  isActive,
+  isCollapsed
 }: {
-  href: string;
-  active: boolean;
-  collapsed: boolean;
-  icon: React.ElementType;
-  label: string;
+  item: typeof NAV_ITEMS[0];
+  isActive: boolean;
+  isCollapsed: boolean;
 }) {
   return (
     <Link
-      href={href}
-      aria-current={active ? "page" : undefined}
-      title={label}
+      href={item.href}
+      title={isCollapsed ? item.label : undefined}
       className={`
-        group flex items-center rounded-2xl transition-all duration-200
-        
-        /* Móvil */
-        flex-col justify-center p-1
-        
-        /* Desktop */
-        md:flex-row md:p-3 md:gap-3
-        
+        group flex items-center rounded-xl transition-all duration-200
+        ${isCollapsed ? "justify-center p-3" : "px-4 py-3 gap-3"}
         ${
-          active
-            ? "text-sky-600 dark:text-sky-400 md:bg-sky-50 md:dark:bg-sky-500/10"
-            : "text-slate-500 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-zinc-100 md:hover:bg-slate-50 md:dark:hover:bg-white/5"
+          isActive
+            ? "bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-400 font-semibold"
+            : "text-slate-500 hover:bg-slate-50 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-200"
         }
       `}
     >
-      {/* Icono */}
-      <div
-        className={`
-        flex items-center justify-center transition-transform duration-200
-        ${active ? "scale-110" : "group-hover:scale-105"}
+      <item.icon
+        size={20}
+        className={`transition-transform duration-200 ${
+          isActive ? "scale-110" : "group-hover:scale-105"
+        }`}
+      />
+      
+      {!isCollapsed && (
+        <span className="text-sm whitespace-nowrap overflow-hidden">
+          {item.label}
+        </span>
+      )}
+
+      {/* Indicador activo (punto azul) */}
+      {!isCollapsed && isActive && (
+        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-sky-500" />
+      )}
+    </Link>
+  );
+}
+
+// ----------------------------------------------------------------------
+// Componente de Enlace para Móvil
+// ----------------------------------------------------------------------
+function MobileNavLink({
+  item,
+  isActive
+}: {
+  item: typeof NAV_ITEMS[0];
+  isActive: boolean;
+}) {
+  return (
+    <Link
+      href={item.href}
+      className={`
+        relative flex flex-col items-center justify-center p-2.5 rounded-xl transition-all duration-300
+        min-w-[3.5rem]
+        ${
+          isActive
+            ? "text-sky-500"
+            : "text-slate-400 hover:text-slate-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+        }
       `}
-      >
-        <Icon
-          size={22}
-          strokeWidth={active ? 2.5 : 2}
-          className={active ? "fill-sky-500/20" : ""} // Efecto sutil de relleno
-        />
-      </div>
+    >
+      {/* Fondo activo animado */}
+      {isActive && (
+        <span className="absolute inset-0 bg-sky-50 dark:bg-sky-500/10 rounded-xl -z-10 animate-in zoom-in-95 duration-200" />
+      )}
 
-      {/* Texto (Label) */}
-      <span
-        className={`
-          text-[10px] font-medium mt-1
-          md:mt-0 md:text-sm md:font-semibold
-          overflow-hidden whitespace-nowrap transition-all duration-300
-          ${
-            collapsed
-              ? "md:w-0 md:opacity-0 hidden md:block"
-              : "md:w-auto md:opacity-100"
-          }
-          ${active ? "font-bold" : ""}
-        `}
-      >
-        {label}
-      </span>
-
-      {/* Indicador de activo (Punto azul solo en desktop expandido) */}
-      {!collapsed && active && (
-        <div className="hidden md:block ml-auto w-1.5 h-1.5 rounded-full bg-sky-500" />
+      <item.icon
+        size={22}
+        strokeWidth={isActive ? 2.5 : 2}
+        className={`transition-transform duration-200 ${isActive ? "-translate-y-0.5" : ""}`}
+      />
+      
+      {/* Indicador inferior (Punto) en lugar de texto para ahorrar espacio */}
+      {isActive && (
+        <span className="absolute bottom-1 w-1 h-1 rounded-full bg-sky-500" />
       )}
     </Link>
   );
