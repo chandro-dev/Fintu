@@ -1,4 +1,4 @@
-// src/app/cuentas/[id]/page.tsx (Contenido principal)
+// src/app/cuentas/[id]/page.tsx
 "use client";
 
 import { useMemo, useState } from "react";
@@ -9,8 +9,18 @@ import { TransactionListItem } from "@/components/transactions/TransactionListIt
 import { TransactionForm } from "@/components/transactions/TransactionForm";
 import type { TxForm, Transaccion } from "@/components/transactions/types";
 import { TransaccionService } from "@/lib/services/TransaccionService";
-import { Wallet, ChevronLeft, Plus, TrendingUp, TrendingDown } from "lucide-react";
-
+// 1. IMPORTAR EL MODAL Y EL ICONO NUEVO
+import { AccountModal } from "@/components/accounts/AccountModal";
+import { 
+  Wallet, 
+  ChevronLeft, 
+  Plus, 
+  TrendingUp, 
+  TrendingDown, 
+  Settings2, 
+  Calculator,
+  Edit3 // <--- Nuevo icono para editar
+} from "lucide-react";
 
 // =========================================================================
 // 💡 LÓGICA DE ESTADO BASE
@@ -26,7 +36,7 @@ const createEmptyTx = (now: string, cuentaId: string): TxForm => ({
 });
 
 // =========================================================================
-// 💡 COMPONENTE DE GRÁFICA DE FLUJO (Extraído para limpieza)
+// 💡 COMPONENTE DE GRÁFICA DE FLUJO
 // =========================================================================
 
 interface FlowBarProps {
@@ -46,11 +56,9 @@ const FlowBarChart = ({ data, moneda }: FlowBarProps) => (
         </p>
       )}
       {data.map(([month, flowData]) => {
-        // Obtenemos el mes en formato "Ene", "Feb", etc.
         const monthLabel = new Date(`${month}-01`).toLocaleString('es-ES', { month: 'short' });
         const totalAbs = flowData.ingresos + flowData.egresos || 1;
         
-        // La barra representa la proporción entre ingresos y egresos respecto al total del flujo.
         const ingresoPct = Math.min(100, (flowData.ingresos / totalAbs) * 100);
         const egresoPct = Math.min(100, (flowData.egresos / totalAbs) * 100);
 
@@ -65,19 +73,9 @@ const FlowBarChart = ({ data, moneda }: FlowBarProps) => (
                 {formatMoney(netValue, moneda)}
               </span>
             </div>
-            
-            {/* Barra de progreso visual */}
             <div className="flex h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-zinc-700">
-              <div
-                className="h-full bg-emerald-400"
-                style={{ width: `${ingresoPct}%` }}
-                title={`Ingresos: ${formatMoney(flowData.ingresos, moneda)}`}
-              />
-              <div
-                className="h-full bg-rose-400"
-                style={{ width: `${egresoPct}%` }}
-                title={`Egresos: ${formatMoney(flowData.egresos, moneda)}`}
-              />
+              <div className="h-full bg-emerald-400" style={{ width: `${ingresoPct}%` }} />
+              <div className="h-full bg-rose-400" style={{ width: `${egresoPct}%` }} />
             </div>
           </div>
         );
@@ -87,7 +85,7 @@ const FlowBarChart = ({ data, moneda }: FlowBarProps) => (
 );
 
 // =========================================================================
-// 💡 STAT CARD (Simplificado con iconos)
+// 💡 STAT CARD
 // =========================================================================
 
 function StatCard({ label, value, tone }: { label: string; value: string; tone: "emerald" | "rose"; }) {
@@ -106,7 +104,6 @@ function StatCard({ label, value, tone }: { label: string; value: string; tone: 
     </div>
   );
 }
-
 
 // =========================================================================
 // 💡 COMPONENTE PRINCIPAL
@@ -130,13 +127,25 @@ export default function CuentaDetallePage() {
 
   const accessToken = session?.access_token;
   
-  // Usamos useMemo para obtener la cuenta y las transacciones filtradas
   const cuenta = useMemo(() => cuentas.find((c) => c.id === cuentaId), [cuentas, cuentaId]);
   const filteredTxs = useMemo(() => transacciones.filter((tx) => tx.cuentaId === cuentaId), [transacciones, cuentaId]);
   const currency = cuenta?.moneda ?? "COP";
 
+  // --- Estados de Transacción ---
+  const [txModalOpen, setTxModalOpen] = useState(false);
+  const [txForm, setTxForm] = useState<TxForm>(() => createEmptyTx(nowLocal, cuentaId));
+  const [editingTxId, setEditingTxId] = useState<string | null>(null);
+  const [txBusy, setTxBusy] = useState(false);
+  const [txError, setTxError] = useState<string | null>(null);
+
+  // --- Estados de Ajuste de Saldo ---
+  const [adjustModalOpen, setAdjustModalOpen] = useState(false);
+  const [targetBalance, setTargetBalance] = useState<string>("");
+
+  // 2. NUEVO ESTADO: Controla el modal de editar cuenta
+  const [editAccountOpen, setEditAccountOpen] = useState(false);
+
   const txSummary = useMemo(() => {
-    // Cálculo optimizado ya existente
     const ingresos = filteredTxs
       .filter((tx) => tx.direccion === "ENTRADA")
       .reduce((acc, tx) => acc + Number(tx.monto ?? 0), 0);
@@ -147,7 +156,6 @@ export default function CuentaDetallePage() {
   }, [filteredTxs]);
 
   const flowByMonth = useMemo(() => {
-    // Cálculo optimizado ya existente
     const map = new Map<string, { ingresos: number; egresos: number }>();
     filteredTxs.forEach((tx) => {
       const key = new Date(tx.ocurrioEn).toISOString().slice(0, 7);
@@ -161,13 +169,7 @@ export default function CuentaDetallePage() {
       .slice(-6);
   }, [filteredTxs]);
 
-
-  // --- ESTADO Y LÓGICA DEL MODAL ---
-  const [txModalOpen, setTxModalOpen] = useState(false);
-  const [txForm, setTxForm] = useState<TxForm>(() => createEmptyTx(nowLocal, cuentaId));
-  const [editingTxId, setEditingTxId] = useState<string | null>(null);
-  const [txBusy, setTxBusy] = useState(false);
-  const [txError, setTxError] = useState<string | null>(null);
+  // --- LÓGICA CRUD ---
 
   const startCreate = () => {
     setEditingTxId(null);
@@ -183,7 +185,7 @@ export default function CuentaDetallePage() {
       monto: Number(tx.monto ?? 0),
       direccion: tx.direccion,
       descripcion: tx.descripcion ?? "",
-      categoriaId: tx.categoria?.id ?? "", // Aseguramos que sea string o ""
+      categoriaId: tx.categoria?.id ?? "",
       ocurrioEn: new Date(tx.ocurrioEn).toISOString().slice(0, 16)
     });
     setTxError(null);
@@ -192,7 +194,6 @@ export default function CuentaDetallePage() {
 
   const saveTx = async () => {
     if (!accessToken) return setTxError("No hay sesión activa");
-    // Añadir validación simple aquí
     if (!txForm.monto || txForm.monto <= 0) return setTxError("El monto debe ser positivo.");
 
     setTxBusy(true);
@@ -229,157 +230,147 @@ export default function CuentaDetallePage() {
       setTxBusy(false);
     }
   };
-  // --- FIN LÓGICA DEL MODAL ---
 
+  // --- LÓGICA DE AJUSTE (RECONCILIACIÓN) ---
+  const handleAdjustment = async () => {
+    if (!accessToken || !cuenta) return;
+    const target = Number(targetBalance);
+    const current = Number(cuenta.saldo);
+    
+    if (isNaN(target)) {
+      setTxError("Ingresa un monto válido");
+      return;
+    }
 
-  // 1) Mientras la sesión carga
-  if (loadingSession) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-         <p className="text-xl text-slate-500 dark:text-zinc-400">Cargando sesión...</p>
-      </div>
-    );
-  }
+    const diff = target - current;
+    
+    if (Math.abs(diff) === 0) {
+      setAdjustModalOpen(false);
+      return;
+    }
 
-  // 2) Ya terminó de cargar sesión y NO hay cuenta
-  if (!cuenta && !loadingSession) {
-    return (
-      <div className="px-6 py-10">
-        <div className="mx-auto max-w-4xl rounded-xl border border-slate-200 bg-white p-6 text-slate-900 shadow dark:border-white/10 dark:bg-black/40 dark:text-zinc-100">
-          <p className="text-lg font-semibold">❌ Error: Cuenta no encontrada</p>
-          <button
-            onClick={() => router.push("/cuentas")}
-            className="mt-3 flex items-center gap-1 rounded-full bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-400"
-          >
-            <ChevronLeft size={16} /> Volver a Cuentas
-          </button>
-        </div>
-      </div>
-    );
-  }
+    setTxBusy(true);
+    try {
+      // Creamos una transacción automática para igualar el saldo
+      await TransaccionService.crear({
+        cuentaId: cuenta.id,
+        monto: Math.abs(diff),
+        direccion: diff > 0 ? "ENTRADA" : "SALIDA",
+        descripcion: "Ajuste manual de saldo",
+        ocurrioEn: nowLocal,
+        isAjuste: true,
+        isTransferencia: false
+      }, { accessToken });
+      
+      setAdjustModalOpen(false);
+      setTargetBalance("");
+      await refresh({ force: true });
+    } catch (err) {
+      setTxError(err instanceof Error ? err.message : "Error al ajustar");
+    } finally {
+      setTxBusy(false);
+    }
+  };
+
+  if (loadingSession) return <div className="flex justify-center pt-20">Cargando...</div>;
+  if (!cuenta && !loadingSession) return <div className="p-6">Cuenta no encontrada</div>;
 
   return (
     <div className="min-h-screen px-6 py-10 text-slate-900 dark:text-zinc-50">
       <div className="mx-auto flex max-w-5xl flex-col gap-6">
         
-        {/* HEADER DE LA CUENTA */}
-        <div className="flex items-center justify-between border-b border-slate-200/50 pb-4 dark:border-white/10">
+        {/* HEADER */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200/50 pb-4 dark:border-white/10">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push("/cuentas")}
-              className="rounded-full border border-slate-300 p-2 text-slate-900 hover:bg-slate-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
-              title="Volver a Cuentas"
-            >
+            <button onClick={() => router.push("/cuentas")} className="rounded-full border border-slate-300 p-2 text-slate-900 hover:bg-slate-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10">
               <ChevronLeft size={20} />
             </button>
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-sky-500">
                 <Wallet size={12} className="inline-block mr-1"/> Detalle
               </p>
-              <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-                {cuenta?.nombre ?? "Cuenta"}
-              </h1>
+              
+              {/* 3. TÍTULO Y BOTÓN DE EDICIÓN AGRUPADOS */}
+              <div className="flex items-center gap-2">
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
+                    {cuenta?.nombre}
+                </h1>
+                <button 
+                  onClick={() => setEditAccountOpen(true)}
+                  className="p-1.5 rounded-full text-slate-400 hover:text-sky-500 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
+                  title="Editar cuenta"
+                >
+                  <Edit3 size={18} />
+                </button>
+              </div>
+
               <p className="text-sm text-slate-600 dark:text-zinc-400">
-                Saldo actual:{" "}
-                <span className="font-semibold text-slate-900 dark:text-white">
-                  {formatMoney(Number(cuenta?.saldo ?? 0), currency)}
-                </span>
-                {loadingData && <span className="ml-2 animate-pulse text-xs text-sky-400">(Sincronizando...)</span>}
+                Saldo: <span className="font-semibold text-slate-900 dark:text-white">{formatMoney(Number(cuenta?.saldo ?? 0), currency)}</span>
               </p>
             </div>
           </div>
-          <button
-            onClick={startCreate}
-            disabled={!accessToken || loadingData}
-            className="flex items-center gap-2 rounded-full bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-sky-600/20 hover:bg-sky-500 disabled:opacity-50 transition-all"
-          >
-            <Plus size={18} />
-            Nueva transacción
-          </button>
-        </div>
-
-        {/* METRICAS (STAT CARDS) */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <StatCard
-            label="Ingresos (Total)"
-            value={formatMoney(txSummary.ingresos, currency)}
-            tone="emerald"
-          />
-          <StatCard
-            label="Egresos (Total)"
-            value={formatMoney(txSummary.egresos, currency)}
-            tone="rose"
-          />
-          <StatCard
-            label="Flujo Neto"
-            value={formatMoney(txSummary.neto, currency)}
-            tone={txSummary.neto >= 0 ? "emerald" : "rose"}
-          />
-        </div>
-
-        {/* GRÁFICA DE FLUJO Y LISTA DE TRANSACCIONES */}
-        <div className="grid gap-4 md:grid-cols-2">
           
-          {/* Gráfica de Flujo Mensual */}
+          <div className="flex gap-2">
+            {/* Botón de Ajuste (Mantenemos por si se quiere usar el acceso rápido) */}
+            <button
+             onClick={() => {
+                // Agregamos ?. y ?? 0 para asegurar que siempre haya un número
+                setTargetBalance(String(Number(cuenta?.saldo ?? 0))); 
+                setAdjustModalOpen(true);
+              }}
+              className="flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/20 dark:text-zinc-200 dark:hover:bg-white/5"
+            >
+              <Settings2 size={16} />
+              Ajustar Saldo
+            </button>
+            
+            <button
+              onClick={startCreate}
+              disabled={!accessToken || loadingData}
+              className="flex items-center gap-2 rounded-full bg-sky-600 px-5 py-2 text-sm font-semibold text-white shadow-lg hover:bg-sky-500 disabled:opacity-50"
+            >
+              <Plus size={18} />
+              Nueva transacción
+            </button>
+          </div>
+        </div>
+
+        {/* MÉTRICAS */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <StatCard label="Ingresos" value={formatMoney(txSummary.ingresos, currency)} tone="emerald" />
+          <StatCard label="Egresos" value={formatMoney(txSummary.egresos, currency)} tone="rose" />
+          <StatCard label="Flujo Neto" value={formatMoney(txSummary.neto, currency)} tone={txSummary.neto >= 0 ? "emerald" : "rose"} />
+        </div>
+
+        {/* CUERPO PRINCIPAL */}
+        <div className="grid gap-4 md:grid-cols-2">
           <FlowBarChart data={flowByMonth} moneda={currency} />
           
-          {/* Transacciones Recientes */}
           <div className="rounded-xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-black/40">
-            <p className="text-sm font-semibold text-slate-900 dark:text-white">
-              Últimas {filteredTxs.length} Transacciones
-            </p>
-            <p className="text-xs text-slate-500 dark:text-zinc-400 mb-3">
-              Movimientos recientes en esta cuenta.
-            </p>
-            <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">Últimos Movimientos</p>
+            <div className="mt-3 space-y-3 max-h-[420px] overflow-y-auto pr-1">
               {filteredTxs.map((tx) => (
-                <TransactionListItem
-                  key={tx.id}
-                  tx={tx}
-                  onEdit={startEdit}
-                  onDelete={deleteTx}
-                />
+                <TransactionListItem key={tx.id} tx={tx} onEdit={startEdit} onDelete={deleteTx} />
               ))}
               {filteredTxs.length === 0 && (
-                <p className="text-sm text-slate-500 dark:text-zinc-400 py-4 text-center border border-dashed rounded-lg mt-3">
-                  Aún no hay movimientos registrados.
-                </p>
+                <p className="text-sm text-center py-4 text-slate-500">Sin movimientos aún.</p>
               )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* MODAL DE TRANSACCIÓN */}
+      {/* --- MODAL DE TRANSACCIÓN --- */}
       {txModalOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
           <div className="w-full max-w-3xl rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-zinc-950">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-sky-400">
-                  {editingTxId ? "Editar transaccion" : "Registrar transaccion"}
-                </p>
-                <h3 className="text-xl font-semibold text-slate-900 dark:text-white">
-                  Movimiento en {cuenta?.nombre ?? "Cuenta"}
-                </h3>
-              </div>
-              <button
-                onClick={() => {
-                  setTxModalOpen(false);
-                  setEditingTxId(null);
-                }}
-                className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-900 hover:bg-slate-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
-              >
-                Cerrar
-              </button>
+            <div className="mb-4 flex justify-between items-center">
+              <h3 className="text-xl font-semibold text-slate-900 dark:text-white">
+                {editingTxId ? "Editar movimiento" : "Nuevo movimiento"}
+              </h3>
+              <button onClick={() => setTxModalOpen(false)} className="text-sm text-slate-500 hover:text-slate-800">Cancelar</button>
             </div>
-
-            {txError && (
-              <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
-                {txError}
-              </div>
-            )}
-
+            {txError && <div className="mb-4 text-rose-500 text-sm">{txError}</div>}
             <TransactionForm
               form={txForm}
               cuentas={cuentas}
@@ -387,17 +378,108 @@ export default function CuentaDetallePage() {
               nowLocal={nowLocal}
               busy={txBusy}
               isEditing={Boolean(editingTxId)}
-              onChange={(partial) => setTxForm((prev) => ({ ...prev, ...partial }))}
+              onChange={(p) => setTxForm(prev => ({ ...prev, ...p }))}
               onSubmit={saveTx}
               onDelete={editingTxId ? () => deleteTx(editingTxId) : undefined}
-              onCancel={() => {
-                setTxModalOpen(false);
-                setEditingTxId(null);
-              }}
+              onCancel={() => setTxModalOpen(false)}
             />
           </div>
         </div>
       )}
+
+      {/* --- MODAL DE AJUSTE DE SALDO (RÁPIDO) --- */}
+      {adjustModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-zinc-900">
+            <div className="flex items-center gap-3 mb-4 text-sky-500">
+               <div className="p-2 bg-sky-100 dark:bg-sky-500/20 rounded-full">
+                  <Calculator size={24} />
+               </div>
+               <h3 className="text-lg font-bold text-slate-900 dark:text-white">Ajustar Saldo</h3>
+            </div>
+            
+            <p className="text-sm text-slate-500 dark:text-zinc-400 mb-6">
+              Ingresa el monto real que tienes en esta cuenta. Crearemos automáticamente una transacción de ajuste para igualar el sistema.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold uppercase text-slate-500">Saldo en Sistema</label>
+                <p className="text-lg font-mono font-medium text-slate-700 dark:text-zinc-300">
+                  {formatMoney(Number(cuenta?.saldo), currency)}
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold uppercase text-slate-500">Nuevo Saldo Real</label>
+                <input
+                   type="number"
+                   value={targetBalance}
+                   onChange={(e) => setTargetBalance(e.target.value)}
+                   className="w-full mt-1 p-3 text-xl font-bold rounded-xl border border-slate-200 bg-slate-50 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 outline-none dark:border-white/10 dark:bg-black/40 dark:text-white"
+                   placeholder="0.00"
+                   autoFocus
+                />
+              </div>
+
+              {/* Vista Previa del Ajuste */}
+              {targetBalance && !isNaN(Number(targetBalance)) && (
+                 <div className="p-3 rounded-lg bg-slate-100 dark:bg-white/5 text-sm">
+                    <div className="flex justify-between">
+                       <span>Diferencia:</span>
+                       <span className={`font-bold ${Number(targetBalance) - Number(cuenta?.saldo) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                          {formatMoney(Number(targetBalance) - Number(cuenta?.saldo), currency)}
+                       </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 text-right">
+                       {Number(targetBalance) - Number(cuenta?.saldo) >= 0 
+                         ? "(Se creará un Ingreso de Ajuste)" 
+                         : "(Se creará un Gasto de Ajuste)"}
+                    </p>
+                 </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-8">
+              <button 
+                onClick={() => setAdjustModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-full dark:text-zinc-400 dark:hover:bg-white/10"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleAdjustment}
+                disabled={txBusy || !targetBalance}
+                className="px-6 py-2 text-sm font-bold text-white bg-sky-600 hover:bg-sky-500 rounded-full shadow-lg shadow-sky-500/20 disabled:opacity-50"
+              >
+                {txBusy ? "Procesando..." : "Confirmar Ajuste"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. MODAL DE EDICIÓN COMPLETA (NOMBRE + SALDO) */}
+      {accessToken && (
+        <AccountModal
+          open={editAccountOpen}
+          onClose={() => setEditAccountOpen(false)}
+          onSuccess={() => {
+            refresh({ force: true });
+            setEditAccountOpen(false);
+            // Si el modal de edición borró la cuenta, redirigimos a la lista
+            // Nota: En caso de borrado, la cuenta será undefined, pero el refresh lo manejará
+            if (!cuentas.find(c => c.id === cuentaId)) {
+                router.push("/cuentas");
+            }
+          }}
+          accessToken={accessToken}
+          initialData={cuenta}
+    editingId={cuenta?.id}
+  tipoCuentaId={cuenta?.tipoCuentaId}
+        />
+      )}
+
     </div>
   );
 }

@@ -1,15 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseClient } from "@/lib/supabaseClient";
 
-// 1. Contexto Global
+// Contexto y Hooks
 import { useAppData } from "@/components/AppDataProvider"; 
 import { useFinancialMetrics } from "@/hooks/useFinancialMetrics";
-
-// Utilidades
-import { formatMoney } from "@/lib/formatMoney"; // <--- IMPORTANTE: Agregado para formatear
+import { formatMoney } from "@/lib/formatMoney";
 
 // Componentes UI
 import { Loading } from "@/components/ui/Loading";
@@ -31,7 +29,6 @@ import { TxForm } from "@/components/transactions/types";
 export default function Dashboard() {
   const router = useRouter();
 
-  // 2. Datos del Contexto
   const {
     session,
     loadingSession,
@@ -42,39 +39,100 @@ export default function Dashboard() {
     refresh
   } = useAppData();
 
-  // Redirección
+  // --- FILTROS ---
+  const [filters, setFilters] = useState({
+    type: "NORMAL", // Por defecto solo mostramos normales
+    accountId: "",
+    categoryId: "",
+    dateStart: "",
+    dateEnd: ""
+  });
+
   useEffect(() => {
     if (!loadingSession && !session) {
       router.replace("/login");
     }
   }, [loadingSession, session, router]);
 
-  // 3. Métricas
+  // --- LÓGICA DE FILTRADO INTELIGENTE (3 TIPOS) ---
+  const filteredTransactions = useMemo(() => {
+    return transacciones.filter(tx => {
+      
+      // 1. DETERMINAR EL TIPO REAL DE LA TRANSACCIÓN
+      let txType = "NORMAL";
+      
+      if (tx.transaccionRelacionadaId) {
+        txType = "TRANSFERENCIA";
+      } else if (tx.descripcion === "Ajuste manual de saldo") {
+        // Identificamos Ajustes por su descripción (según tu implementación anterior)
+        txType = "AJUSTE";
+      }
+
+      // 2. APLICAR FILTRO DE TIPO
+      if (filters.type !== "ALL" && filters.type !== txType) {
+        return false;
+      }
+
+      // 3. Filtro por Cuenta
+      if (filters.accountId && tx.cuentaId !== filters.accountId) return false;
+
+      // 4. Filtro por Categoría
+      if (filters.categoryId && tx.categoria?.id !== filters.categoryId) return false;
+
+      // 5. Filtro por Fechas
+      if (filters.dateStart) {
+        const txDate = new Date(tx.ocurrioEn);
+        const startDate = new Date(filters.dateStart);
+        // Ajuste zona horaria simple
+        if (txDate < startDate) return false;
+      }
+      if (filters.dateEnd) {
+        const txDate = new Date(tx.ocurrioEn);
+        const endDate = new Date(filters.dateEnd);
+        endDate.setHours(23, 59, 59, 999);
+        if (txDate > endDate) return false;
+      }
+
+      return true;
+    });
+  }, [transacciones, filters]);
+
+  // Pasamos los datos FILTRADOS a las métricas
   const {
     totals,
-    totalSaldo, // Este suele ser un number
+    totalSaldo,
     flowByMonth,
     gastosPorCategoria,
     saldoPorTipoCuenta
-  } = useFinancialMetrics(transacciones, cuentas);
+  } = useFinancialMetrics(filteredTransactions, cuentas);
 
-  // 4. UI State
+  // Estados UI
   const [modals, setModals] = useState({ tx: false, cat: false });
   const [editingTx, setEditingTx] = useState<TxForm | undefined>(undefined);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const handleEditTx = (tx: any) => {
-    setEditingId(tx.id);
-    setEditingTx({
-      cuentaId: tx.cuentaId,
-      monto: Number(tx.monto),
-      direccion: tx.direccion,
-      descripcion: tx.descripcion ?? "",
-      categoriaId: tx.categoria?.id ?? "",
-      ocurrioEn: new Date(tx.ocurrioEn).toISOString().slice(0, 16)
-    });
-    setModals({ ...modals, tx: true });
-  };
+const handleEditTx = (tx: any) => {
+  setEditingId(tx.id);
+  
+  setEditingTx({
+    cuentaId: tx.cuentaId,
+    // Asegúrate de enviar el monto como número
+    monto: Number(tx.monto), 
+    
+    // Esto determina si se pone VERDE (Ingreso) o ROJO (Gasto)
+    direccion: tx.direccion, 
+    
+    descripcion: tx.descripcion ?? "",
+    categoriaId: tx.categoria?.id ?? "",
+    ocurrioEn: new Date(tx.ocurrioEn).toISOString().slice(0, 16),
+    
+    // 🔥 ESTO ES LA CLAVE:
+    // Si tiene transaccionRelacionadaId, le decimos al form que active el modo TRANSFERENCIA (Azul)
+    isTransferencia: Boolean(tx.transaccionRelacionadaId) 
+  });
+  
+  setModals({ ...modals, tx: true });
+};
 
   const handleNewTx = () => {
     setEditingId(null);
@@ -97,7 +155,6 @@ export default function Dashboard() {
 
   if (!session) return null;
 
-  // Lógica de color para el saldo total
   const saldoNum = Number(totalSaldo || 0);
   const saldoColorClass = saldoNum >= 0 
     ? "text-emerald-500 bg-emerald-500/10" 
@@ -134,14 +191,13 @@ export default function Dashboard() {
           </div>
         </header>
 
-        {/* SECCIÓN SUPERIOR: WIDGETS PRINCIPALES */}
+        {/* SECCIÓN SUPERIOR */}
         <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           
-          {/* 1. CUENTAS (CORREGIDO) */}
+          {/* Cuentas (No afectadas por filtros de transacción, muestran saldo real) */}
           <div className="rounded-2xl border border-slate-500/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5">
             <div className="flex justify-between mb-4 items-center">
               <h2 className="text-xl font-semibold">Cuentas</h2>
-              {/* Aquí aplicamos el formato y el color dinámico */}
               <span className={`text-sm font-mono font-bold px-2 py-0.5 rounded-md ${saldoColorClass}`}>
                 {formatMoney(saldoNum)}
               </span>
@@ -149,7 +205,7 @@ export default function Dashboard() {
             <AccountsList cuentas={cuentas} loading={loadingData} />
           </div>
 
-          {/* 2. Categorías */}
+          {/* Categorías */}
           <div className="flex flex-col h-full rounded-2xl border border-slate-500/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5">
             <div className="flex justify-between mb-4">
               <h2 className="text-xl font-semibold">Categorías</h2>
@@ -165,16 +221,20 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* 3. Resumen Financiero */}
+          {/* Resumen (AFECTADO POR FILTROS) */}
           <SummaryWidget
             ingresos={totals.ingresos}
             egresos={totals.egresos}
             neto={totals.neto}
+            cuentas={cuentas}
+            categorias={categorias}
+            filters={filters}
+            setFilters={setFilters}
             onNewTransaction={handleNewTx}
           />
         </section>
 
-        {/* SECCIÓN MEDIA: GRÁFICAS */}
+        {/* GRÁFICAS */}
         <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="rounded-2xl border bg-white/80 p-6 shadow dark:border-white/10 dark:bg-white/5">
             <h3 className="mb-4 font-semibold text-slate-700 dark:text-slate-200">Flujo mensual</h3>
@@ -194,7 +254,7 @@ export default function Dashboard() {
                 />
               ))}
               {gastosPorCategoria.length === 0 && (
-                <p className="text-sm text-zinc-400 py-4 text-center">Sin gastos registrados</p>
+                <p className="text-sm text-zinc-400 py-4 text-center">Sin datos con estos filtros</p>
               )}
             </div>
           </div>
@@ -217,10 +277,12 @@ export default function Dashboard() {
           </div>
         </section>
 
-        {/* SECCIÓN INFERIOR: TRANSACCIONES */}
+        {/* LISTA DE TRANSACCIONES */}
         <section className="rounded-2xl border bg-white/80 p-6 shadow dark:border-white/10 dark:bg-white/5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">Últimas Transacciones</h2>
+            <h2 className="text-xl font-semibold">
+              Transacciones ({filteredTransactions.length})
+            </h2>
             <button 
               onClick={() => router.push('/transacciones')} 
               className="text-xs text-sky-500 hover:underline"
@@ -229,24 +291,25 @@ export default function Dashboard() {
             </button>
           </div>
           <div className="flex flex-col gap-3">
-            {transacciones.slice(0, 5).map((tx) => (
+            {filteredTransactions.slice(0, 10).map((tx) => (
               <TransactionListItem
                 key={tx.id}
                 tx={tx}
                 onEdit={() => handleEditTx(tx)}
               />
             ))}
-            {transacciones.length === 0 && !loadingData && (
-              <p className="text-zinc-400 py-4 text-center border border-dashed rounded-lg">No hay movimientos recientes.</p>
+            {filteredTransactions.length === 0 && !loadingData && (
+              <p className="text-zinc-400 py-4 text-center border border-dashed rounded-lg">
+                No hay transacciones de tipo {filters.type} con los filtros actuales.
+              </p>
             )}
-            {loadingData && transacciones.length === 0 && (
+            {loadingData && filteredTransactions.length === 0 && (
                <p className="text-zinc-400 py-4 text-center">Cargando movimientos...</p>
             )}
           </div>
         </section>
       </div>
 
-      {/* MODALES FLOTANTES */}
       <CreateCategoryModal
         open={modals.cat}
         onClose={() => setModals({ ...modals, cat: false })}

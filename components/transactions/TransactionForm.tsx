@@ -1,29 +1,29 @@
 "use client";
 
-import { useMemo } from "react";
-import { Categoria, Cuenta, TxForm } from "./types";
-import { InputField, SelectField } from "../ui/Fields";
-import { formatMoney } from "@/lib/formatMoney";
-import { TransactionPreview } from "./TransactionPreview";
+import { useEffect, useState } from "react";
+import { InputField, SelectField } from "@/components/ui/Fields";
+import type { Categoria, Cuenta, TxForm } from "./types";
+import { ArrowDown, ArrowUp, ArrowRightLeft } from "lucide-react";
 
 type Props = {
   form: TxForm;
   cuentas: Cuenta[];
   categorias: Categoria[];
-  nowLocal: string;
-  busy: boolean;
-  isEditing: boolean;
+  busy?: boolean;
+  isEditing?: boolean;
   onChange: (partial: Partial<TxForm>) => void;
   onSubmit: () => void;
   onDelete?: () => void;
   onCancel: () => void;
+  nowLocal?: string;
 };
+
+type Mode = "SALIDA" | "ENTRADA" | "TRANSFERENCIA";
 
 export function TransactionForm({
   form,
   cuentas,
   categorias,
-  nowLocal,
   busy,
   isEditing,
   onChange,
@@ -31,200 +31,230 @@ export function TransactionForm({
   onDelete,
   onCancel,
 }: Props) {
-  const isEntrada = form.direccion === "ENTRADA";
-
-  const cuentaSeleccionada = useMemo(
-    () => cuentas.find((c) => c.id === form.cuentaId),
-    [cuentas, form.cuentaId]
-  );
-  const categoriaSeleccionada = useMemo(
-    () => categorias.find((c) => c.id === form.categoriaId),
-    [categorias, form.categoriaId]
+  
+  const [mode, setMode] = useState<Mode>(
+    form.isTransferencia ? "TRANSFERENCIA" : (form.direccion as Mode) || "SALIDA"
   );
 
-  const montoAbsoluto = Math.abs(form.monto || 0);
-  const currency = cuentaSeleccionada?.moneda ?? "USD";
+  const [displayMonto, setDisplayMonto] = useState("");
 
-  const handleMontoInputChange = (raw: string) => {
-    const digits = raw.replace(/\D/g, "");
-    const numero = digits ? Number(digits) : 0;
-    onChange({ monto: numero });
+  useEffect(() => {
+    if (form.monto && form.monto > 0) {
+      setDisplayMonto(new Intl.NumberFormat("es-CO").format(Number(form.monto)));
+    } else if (!isEditing && form.monto === 0) {
+        setDisplayMonto("");
+    }
+  }, [form.monto, isEditing]);
+
+  useEffect(() => {
+    // Si estamos editando y ya era transferencia, mantenemos el modo
+    if (isEditing && form.isTransferencia) return;
+
+    if (mode === "TRANSFERENCIA") {
+      onChange({ 
+        isTransferencia: true, 
+        direccion: "SALIDA",
+        descripcion: "", 
+        categoriaId: undefined 
+      });
+    } else {
+      onChange({ 
+        isTransferencia: false, 
+        direccion: mode, 
+        cuentaDestinoId: undefined 
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  const handleMoneyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value.replace(/\D/g, "");
+    if (rawValue === "") {
+      setDisplayMonto("");
+      onChange({ monto: 0 });
+      return;
+    }
+    const numericValue = parseInt(rawValue, 10);
+    const formatted = new Intl.NumberFormat("es-CO").format(numericValue);
+    setDisplayMonto(formatted);
+    onChange({ monto: numericValue });
   };
 
-  const montoDisplay = montoAbsoluto ? formatMoney(montoAbsoluto, currency) : "";
+  const cuentasOrigenOptions = cuentas.map((c) => ({ label: c.nombre, value: c.id }));
+  const cuentasDestinoOptions = cuentas
+    .filter((c) => c.id !== form.cuentaId)
+    .map((c) => ({ label: c.nombre, value: c.id }));
+
+  const categoriasOptions = [
+    { label: "Sin categoría", value: "" },
+    ...categorias.map((c) => ({ label: c.nombre, value: c.id })),
+  ];
 
   return (
-    <div className="space-y-4 text-slate-900 dark:text-zinc-100">
-      {/* Toggle visual Ingreso / Gasto. Esto reduce clicks cuando la intención es clara. */}
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-black/40">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-zinc-400">
-          Tipo de movimiento
-        </p>
-        <div className="grid grid-cols-2 gap-2">
+    <div className="space-y-5">
+      
+      {/* TABS DE SELECCIÓN */}
+      {/* Si es una transferencia existente, no mostramos tabs para evitar romper la integridad */}
+      {(!isEditing || !form.isTransferencia) && (
+        <div className={`grid gap-2 p-1 bg-slate-100 dark:bg-black/40 rounded-xl ${isEditing ? "grid-cols-2" : "grid-cols-3"}`}>
           <button
             type="button"
-            onClick={() => onChange({ direccion: "ENTRADA" })}
-            className={
-              "flex items-center justify-between rounded-xl border px-3 py-2 text-sm font-semibold transition " +
-              (isEntrada
-                ? "border-emerald-400 bg-emerald-500/15 text-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.25)]"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-transparent dark:bg-black/40 dark:text-zinc-400 dark:hover:bg-white/5")
-            }
+            onClick={() => setMode("SALIDA")}
+            className={`flex items-center justify-center gap-2 py-2 text-sm font-semibold rounded-lg transition-all ${
+              mode === "SALIDA"
+                ? "bg-white dark:bg-zinc-800 text-rose-500 shadow-sm"
+                : "text-slate-500 hover:text-slate-700 dark:text-zinc-400"
+            }`}
           >
-            <div className="flex flex-col text-left">
-              <span>Ingreso</span>
-              <span className="text-[0.65rem] font-normal text-emerald-800/80">
-                Aumenta el saldo
-              </span>
-            </div>
-            <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-500">
-              +
-            </span>
+            <ArrowUp size={16} /> Gasto
           </button>
+          
+          <button
+            type="button"
+            onClick={() => setMode("ENTRADA")}
+            className={`flex items-center justify-center gap-2 py-2 text-sm font-semibold rounded-lg transition-all ${
+              mode === "ENTRADA"
+                ? "bg-white dark:bg-zinc-800 text-emerald-500 shadow-sm"
+                : "text-slate-500 hover:text-slate-700 dark:text-zinc-400"
+            }`}
+          >
+            <ArrowDown size={16} /> Ingreso
+          </button>
+          
+          {/* Ocultamos el botón "Transferir" si estamos editando */}
+          {!isEditing && (
+            <button
+              type="button"
+              onClick={() => setMode("TRANSFERENCIA")}
+              className={`flex items-center justify-center gap-2 py-2 text-sm font-semibold rounded-lg transition-all ${
+                mode === "TRANSFERENCIA"
+                  ? "bg-white dark:bg-zinc-800 text-sky-500 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700 dark:text-zinc-400"
+              }`}
+            >
+              <ArrowRightLeft size={16} /> Transferir
+            </button>
+          )}
+        </div>
+      )}
 
-          <button
-            type="button"
-            onClick={() => onChange({ direccion: "SALIDA" })}
-            className={
-              "flex items-center justify-between rounded-xl border px-3 py-2 text-sm font-semibold transition " +
-              (!isEntrada
-                ? "border-rose-400 bg-rose-500/15 text-rose-100 shadow-[0_0_20px_rgba(244,63,94,0.25)]"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-transparent dark:bg-black/40 dark:text-zinc-400 dark:hover:bg-white/5")
-            }
-          >
-            <div className="flex flex-col text-left">
-              <span>Gasto</span>
-              <span className="text-[0.65rem] font-normal text-rose-800/80">
-                Disminuye el saldo
-              </span>
-            </div>
-            <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-xs text-rose-400">
-              −
-            </span>
-          </button>
+      {/* Si estamos editando una transferencia, mostramos un aviso */}
+      {isEditing && form.isTransferencia && (
+        <div className="bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400 text-sm px-4 py-3 rounded-xl flex items-center gap-2">
+           <ArrowRightLeft size={16} />
+           <span className="font-medium">Editando Transferencia</span>
+        </div>
+      )}
+
+      {/* INPUT MONTO */}
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-zinc-400">
+            Monto
+        </label>
+        <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold">$</span>
+            <input
+                type="text"
+                value={displayMonto}
+                onChange={handleMoneyChange}
+                placeholder="0"
+                autoFocus={!isEditing}
+                className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-8 pr-4 text-xl font-bold text-slate-900 outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 dark:border-white/10 dark:bg-black/40 dark:text-white dark:focus:ring-white/5"
+            />
         </div>
       </div>
 
-      {/* Campos del formulario: cuenta, fecha, monto, categoría, descripción */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <SelectField
-          label="Cuenta"
-          value={form.cuentaId}
-          onChange={(v) => onChange({ cuentaId: v })}
-          options={[
-            { label: "Selecciona cuenta", value: "" },
-            ...cuentas.map((c) => ({ label: c.nombre, value: c.id })),
-          ]}
-        />
+      {/* GRID DE CUENTAS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className={mode === "TRANSFERENCIA" ? "col-span-1" : "md:col-span-2"}>
+          <SelectField
+            label={mode === "TRANSFERENCIA" ? "Desde (Origen)" : "Cuenta"}
+            value={form.cuentaId}
+            onChange={(v) => onChange({ cuentaId: v })}
+            options={cuentasOrigenOptions}
+            placeholder="Selecciona cuenta"
+            // Deshabilitamos cambio de cuenta si es transferencia existente para evitar inconsistencias
+            disabled={isEditing && form.isTransferencia} 
+          />
+        </div>
 
-        <InputField
-          label="Fecha y hora"
-          value={form.ocurrioEn || nowLocal}
-          onChange={(v) => onChange({ ocurrioEn: v })}
-          type="datetime-local"
-        />
-
-        {/* Monto: entrada numérica pero formateada; se guarda el valor crudo en estado. */}
-        <div className="md:col-span-2">
-          <div className="rounded-2xl border border-black/10 bg-white/80 p-3 shadow-sm dark:border-white/10 dark:bg-black/50">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-zinc-400">
-                Monto
-              </p>
-              <span
-                className={
-                  "rounded-full px-2 py-0.5 text-[0.7rem] font-semibold " +
-                  (isEntrada
-                    ? "bg-emerald-500/15 text-emerald-500"
-                    : "bg-rose-500/15 text-rose-500")
-                }
-              >
-                {isEntrada ? "Ingreso" : "Gasto"}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div
-                className={
-                  "flex h-11 w-11 items-center justify-center rounded-full text-lg font-semibold " +
-                  (isEntrada
-                    ? "bg-emerald-500/20 text-emerald-500"
-                    : "bg-rose-500/20 text-rose-500")
-                }
-              >
-                {isEntrada ? "+" : "−"}
-              </div>
-
-              <div className="flex-1">
-                <InputField
-                  label=""
-                  type="text"
-                  // si tu InputField no pasa inputMode al <input>, puedes agregarlo allí en su implementación
-                  inputMode="numeric"
-                  value={montoDisplay}
-                  onChange={handleMontoInputChange}
-                  placeholder="$ 0"
-                />
-                <div className="mt-1 text-[0.7rem] uppercase tracking-widest text-zinc-500">
-                  {montoAbsoluto ? formatMoney(montoAbsoluto) : "Sin monto"}
-                </div>
-              </div>
-            </div>
+        {mode === "TRANSFERENCIA" && !isEditing && (
+          <div className="col-span-1 animate-in slide-in-from-left-2 fade-in duration-300">
+            <SelectField
+              label="Hacia (Destino)"
+              value={form.cuentaDestinoId || ""}
+              onChange={(v) => onChange({ cuentaDestinoId: v })}
+              options={cuentasDestinoOptions}
+              placeholder="Selecciona destino"
+            />
           </div>
-        </div>
-
-        <SelectField
-          label="Categoría (opcional)"
-          value={form.categoriaId ?? ""}
-          onChange={(v) => onChange({ categoriaId: v || undefined })}
-          options={[
-            { label: "Sin categoría", value: "" },
-            ...categorias.map((c) => ({ label: c.nombre, value: c.id })),
-          ]}
-        />
-
-        <InputField
-          label="Descripción"
-          value={form.descripcion}
-          onChange={(v) => onChange({ descripcion: v })}
-        />
+        )}
       </div>
 
-      <TransactionPreview
-        form={form}
-        cuenta={cuentaSeleccionada}
-        categoria={categoriaSeleccionada}
-        nowLocal={nowLocal}
-        currency={currency}
-      />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <InputField
+          label="Fecha y Hora"
+          type="datetime-local"
+          value={form.ocurrioEn ?? ""}
+          onChange={(v) => onChange({ ocurrioEn: v })}
+        />
 
-      {/* Botones */}
-      <div className="flex flex-wrap gap-3 pt-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
-        >
-          Cancelar
-        </button>
-        <button
-          type="button"
-          onClick={onSubmit}
-          disabled={busy}
-          className="rounded-full bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400 disabled:opacity-50"
-        >
-          {busy ? "Guardando..." : isEditing ? "Actualizar" : "Guardar"}
-        </button>
-        {isEditing && onDelete && (
+        {mode !== "TRANSFERENCIA" && (
+            <SelectField
+            label="Categoría"
+            value={form.categoriaId ?? ""}
+            onChange={(v) => onChange({ categoriaId: v })}
+            options={categoriasOptions}
+            placeholder="Sin categoría"
+            />
+        )}
+      </div>
+
+      {mode !== "TRANSFERENCIA" && (
+        <InputField
+            label="Descripción / Nota"
+            value={form.descripcion}
+            onChange={(v) => onChange({ descripcion: v })}
+            placeholder="Ej: Compras del super"
+        />
+      )}
+
+      {/* BOTONES */}
+      <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-white/10 mt-2">
+        {isEditing && onDelete ? (
           <button
             type="button"
             onClick={onDelete}
-            disabled={busy}
-            className="rounded-full border border-red-400/40 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/20 disabled:opacity-50"
+            className="text-sm font-semibold text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 px-3 py-2 rounded-lg transition-colors"
           >
-            {busy ? "Borrando..." : "Eliminar"}
+            Eliminar
           </button>
+        ) : (
+          <div /> 
         )}
+
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-zinc-300 dark:hover:bg-white/10 rounded-full transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={busy}
+            className={`
+              px-6 py-2 text-sm font-semibold text-white rounded-full shadow-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100
+              ${mode === "SALIDA" ? "bg-rose-500 hover:bg-rose-600 shadow-rose-500/20" : ""}
+              ${mode === "ENTRADA" ? "bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20" : ""}
+              ${mode === "TRANSFERENCIA" ? "bg-sky-500 hover:bg-sky-600 shadow-sky-500/20" : ""}
+            `}
+          >
+            {busy ? "Guardando..." : isEditing ? "Actualizar" : "Guardar"}
+          </button>
+        </div>
       </div>
     </div>
   );

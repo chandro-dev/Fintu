@@ -1,3 +1,5 @@
+// src/components/transactions/types.ts
+
 export type TipoCuenta = {
   id: string;
   codigo: string;
@@ -16,16 +18,16 @@ export type Cuenta = {
   diaCorte?: number | null;
   diaPago?: number | null;
   plazoMeses?: number | null;
-  limite?: number | null;
-  institucion?:string|null; 
+  institucion?: string | null; 
   tipoCuenta?: TipoCuenta | null;
 };
 
 export type Categoria = {
   id: string;
   nombre: string;
-  tipo: "INGRESO" | "GASTO" | "TRANSFERENCIA";
+  tipo: "INGRESO" | "GASTO" | "TRANSFERENCIA"; // Importante para lógica de colores
   color?: string | null;
+  icono?: string | null; // <--- AGREGADO: Necesario para CategoryBadge
 };
 
 export type TxForm = {
@@ -34,8 +36,13 @@ export type TxForm = {
   direccion: "ENTRADA" | "SALIDA";
   descripcion: string;
   categoriaId?: string;
-  categoriaIds?: string[]; // soporte para varias categorías
-  ocurrioEn?: string;
+  ocurrioEn?: string; // ISO string date
+  isAjuste?: boolean;
+  // Campos para Transferencias y Lógica extra
+  isTransferencia?: boolean; // <--- AGREGADO: Para el switch del modal
+  cuentaDestinoId?: string;  // <--- AGREGADO: Para transferencias
+  conciliada?: boolean;      // <--- AGREGADO: Para conciliación futura
+  etiquetas?: string[];      // <--- AGREGADO: Para etiquetas libres (tags)
 };
 
 export type Transaccion = {
@@ -45,12 +52,17 @@ export type Transaccion = {
   descripcion: string | null;
   ocurrioEn: string;
   direccion: "ENTRADA" | "SALIDA";
+  
+  // Relaciones y Tipos
   tipoTransaccionId?: string | null;
-  tipoTransaccion?: {
+  tipoTransaccion?: { // <--- VITAL: Usado en los filtros de la página
     id: string;
-    codigo: string;
+    codigo: string; // "NORMAL" | "TRANSFERENCIA" | "AJUSTE"
     nombre: string;
   } | null;
+
+  transaccionRelacionadaId?: string | null; // <--- VITAL: Para detectar parejas de transferencia
+
   cuentaId: string;
   cuenta?: {
     nombre: string;
@@ -58,9 +70,15 @@ export type Transaccion = {
     tipoCuenta?: TipoCuenta | null;
     moneda: string;
   };
+  
   categoria?: Categoria | null;
-  categorias?: Categoria[];
+  etiquetas?: string[]; // Array de strings simple
+  
+  createdAt?: string;
+  updatedAt?: string;
 };
+
+// Tipos para Tarjetas de Crédito (si los usas más adelante)
 type DireccionUI = "ENTRADA" | "SALIDA";
 
 export type TarjetaMovimientoUI = {

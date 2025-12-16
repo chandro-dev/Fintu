@@ -1,129 +1,134 @@
 "use client";
 
-import { useMemo } from "react";
-import { Transaccion } from "./types";
 import { formatMoney } from "@/lib/formatMoney";
-import {
-  Pencil,
+import { 
+  ArrowDownRight, 
+  ArrowUpRight, 
+  ArrowRightLeft, 
+  Calendar, 
+  Edit2, 
   Trash2,
-  Wallet,
-  Tag,
-  CalendarClock,
-  ArrowDownRight,
-  ArrowUpRight
+  Wallet
 } from "lucide-react";
+import type { Transaccion } from "./types";
 
-type Props = {
+interface Props {
   tx: Transaccion;
   onEdit: (tx: Transaccion) => void;
   onDelete?: (id: string) => void;
-};
+}
 
 export function TransactionListItem({ tx, onEdit, onDelete }: Props) {
-  // Lógica de presentación
-  const isEntrada = tx.direccion === "ENTRADA";
-  const montoAbs = Math.abs(Number(tx.monto) || 0);
+  // 1. Detectar si es transferencia
+  const isTransfer = Boolean(tx.transaccionRelacionadaId);
+  const isIncome = tx.direccion === "ENTRADA";
 
-  // Formateo de fecha más limpio (Ej: "14 oct, 15:30")
-  const fechaFormateada = useMemo(() => {
-    const date = tx.ocurrioEn ? new Date(tx.ocurrioEn) : new Date();
-    return new Intl.DateTimeFormat("es-ES", {
-      day: "numeric",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit"
-    }).format(date);
-  }, [tx.ocurrioEn]);
+  // 2. Definir estilos basados en la DIRECCIÓN (Entrada vs Salida)
+  let iconColorClass = "";
+  let amountColorClass = "";
+  let bgClass = "";
+  let Icon = isIncome ? ArrowDownRight : ArrowUpRight; // Icono por defecto
+  let sign = isIncome ? "+ " : "- ";
 
-  // Colores dinámicos para el monto
-  const amountClass = isEntrada
-    ? "text-emerald-600 dark:text-emerald-400"
-    : "text-slate-900 dark:text-slate-100";
+  if (isIncome) {
+    // === ESTILO DE ENTRADA (Verde) ===
+    iconColorClass = "text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400";
+    amountColorClass = "text-emerald-600 dark:text-emerald-400";
+    bgClass = "hover:bg-emerald-50/30 dark:hover:bg-emerald-500/10";
+  } else {
+    // === ESTILO DE SALIDA (Rojo) ===
+    iconColorClass = "text-rose-600 bg-rose-100 dark:bg-rose-500/20 dark:text-rose-400";
+    amountColorClass = "text-rose-600 dark:text-rose-400";
+    bgClass = "hover:bg-rose-50/30 dark:hover:bg-rose-500/10";
+  }
 
-  // Color de fondo para el icono de categoría
-  const categoryColor = tx.categoria?.color || "#71717a"; // Zinc-500 default
+  // 3. Ajuste específico si es Transferencia
+  // Mantenemos el color rojo/verde, pero cambiamos el icono para indicar que es movimiento interno
+  if (isTransfer) {
+    Icon = ArrowRightLeft; 
+    // Opcional: Si quieres diferenciarlo un poco más, podrías usar un tono intermedio, 
+    // pero si quieres que se vea "parecido a entrar o salir", dejar los colores rojo/verde es lo mejor.
+  }
+
+  // 4. Formato de Moneda y Fecha
+  const currency = tx.moneda || "COP";
+  const dateObj = new Date(tx.ocurrioEn);
+  const day = dateObj.toLocaleDateString("es-CO", { day: "numeric", month: "short" });
+  const time = dateObj.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
 
   return (
-    <div className="group relative flex items-center gap-4 rounded-2xl border border-transparent bg-white p-4 transition-all hover:border-slate-200 hover:shadow-md dark:bg-white/5 dark:hover:border-white/10 dark:hover:bg-white/10">
-      {/* 1. ICONO VISUAL (Izquierda) */}
-      <div
-        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-sm ring-1 ring-black/5"
-        style={{
-          backgroundColor: `${categoryColor}20`, // 20 = 12% opacidad hex
-          color: categoryColor
-        }}
-      >
-        {isEntrada ? <ArrowDownRight size={24} /> : <ArrowUpRight size={24} />}
-      </div>
+    <div className={`group flex items-center justify-between rounded-2xl border border-transparent px-4 py-3 transition-all duration-200 ${bgClass} border-slate-100 dark:border-white/5 shadow-sm hover:shadow-md`}>
+      
+      <div className="flex items-center gap-4 overflow-hidden">
+        {/* Icono */}
+        <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${iconColorClass}`}>
+          <Icon size={20} strokeWidth={2.5} />
+        </div>
 
-      {/* 2. DETALLES (Centro) */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Descripción / Título */}
-        <div className="flex items-center gap-2">
-          <p className="truncate font-semibold text-slate-900 dark:text-zinc-100">
-            {tx.descripcion || "Sin descripción"}
+        {/* Info Principal */}
+        <div className="flex flex-col overflow-hidden">
+          <p className="truncate text-sm font-bold text-slate-900 dark:text-white leading-tight">
+            {tx.descripcion || (isTransfer ? (isIncome ? "Transferencia Recibida" : "Transferencia Enviada") : "Sin descripción")}
           </p>
-          {tx.categoria && (
-            <span
-              className="hidden rounded-full px-1.5 py-0.5 text-[10px] font-medium opacity-70 sm:inline-block"
-              style={{
-                backgroundColor: `${categoryColor}30`,
-                color: categoryColor
-              }}
-            >
-              {tx.categoria.nombre}
+          
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-zinc-400 mt-1">
+            {/* Cuenta */}
+            <span className="flex items-center gap-1 font-medium text-slate-600 dark:text-zinc-300 bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 rounded-md">
+              <Wallet size={10} />
+              {tx.cuenta?.nombre}
             </span>
-          )}
-        </div>
+            
+            <span className="text-slate-300">•</span>
 
-        {/* Metadatos: Cuenta y Fecha */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-zinc-400">
-          <span className="flex items-center gap-1" title="Cuenta">
-            <Wallet size={12} className="opacity-70" />
-            {tx.cuenta?.nombre || "Cuenta desconocida"}
-          </span>
-          <span className="h-1 w-1 rounded-full bg-slate-300 dark:bg-zinc-600" />
-          <span className="flex items-center gap-1" title="Fecha">
-            <CalendarClock size={12} className="opacity-70" />
-            {fechaFormateada}
-          </span>
+            {/* Categoría */}
+            {tx.categoria ? (
+              <span 
+                className="flex items-center gap-1"
+                style={{ color: tx.categoria.color || undefined }}
+              >
+                {tx.categoria.nombre}
+              </span>
+            ) : (
+              <span>General</span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* 3. MONTO Y ACCIONES (Derecha) */}
-      <div className="flex flex-col items-end gap-1">
-        {/* Monto */}
-        <span
-          className={`font-mono text-base font-bold tracking-tight ${amountClass}`}
-        >
-          {isEntrada ? "+" : "-"} {formatMoney(montoAbs, tx.moneda)}
-        </span>
+      <div className="flex flex-col items-end gap-1 pl-2">
+        {/* Monto con color y signo dinámico */}
+        <p className={`text-base font-bold tabular-nums tracking-tight ${amountColorClass}`}>
+          {sign} 
+          {formatMoney(Number(tx.monto), currency)}
+        </p>
+        
+        <div className="flex items-center justify-end gap-3">
+            {/* Fecha */}
+            <div className="flex items-center gap-1 text-[11px] text-slate-400 font-medium">
+                <Calendar size={10} />
+                <span>{day}, {time}</span>
+            </div>
 
-        {/* Botones de Acción (Visibles en hover o en móvil si se ajusta CSS) */}
-        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(tx);
-            }}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-500/20 dark:hover:text-indigo-300"
-            title="Editar"
-          >
-            <Pencil size={16} />
-          </button>
-
-          {onDelete && (
+            {/* Acciones */}
+            <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(tx.id);
-              }}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/20 dark:hover:text-rose-300"
-              title="Eliminar"
+                onClick={() => onEdit(tx)}
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-200 hover:text-sky-600 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
+                title="Editar"
             >
-              <Trash2 size={16} />
+                <Edit2 size={14} />
             </button>
-          )}
+            
+            {onDelete && (
+                <button
+                onClick={() => onDelete(tx.id)}
+                className="rounded-md p-1 text-slate-400 hover:bg-rose-100 hover:text-rose-500 dark:hover:bg-rose-500/20 dark:hover:text-rose-400 transition-colors"
+                title="Eliminar"
+                >
+                <Trash2 size={14} />
+                </button>
+            )}
+            </div>
         </div>
       </div>
     </div>

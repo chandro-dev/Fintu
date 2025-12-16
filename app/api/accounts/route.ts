@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { createClient } from "@supabase/supabase-js";
+import { getTipoTransaccionId } from "@/lib/tipoTransaccion";
 
 // 1. FORZAR RUNTIME DE NODEJS (Soluciona "fetch failed" en Windows)
 export const runtime = 'nodejs';

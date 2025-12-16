@@ -81,13 +81,13 @@ model TipoCuenta {
 }
 
 model Cuenta {
-  id            String    @id @default(uuid())
+  id            String   @id @default(uuid())
   usuarioId     String
   tipoCuentaId  String
   nombre        String
   institucion   String?
-  moneda        String    @default("USD")
-  saldo         Decimal   @default(0)
+  moneda        String   @default("USD")
+  saldo         Decimal  @default(0)
   limiteCredito Decimal?
   tasaApr       Decimal?
   diaCorte      Int?
@@ -96,8 +96,8 @@ model Cuenta {
   plazoMeses    Int?
   abiertaEn     DateTime?
   cerradaEn     DateTime?
-  creadaEn      DateTime  @default(now())
-  actualizadaEn DateTime  @updatedAt
+  creadaEn      DateTime @default(now())
+  actualizadaEn DateTime @updatedAt
 
   usuario       Usuario         @relation(fields: [usuarioId], references: [id])
   tipoCuenta    TipoCuenta      @relation(fields: [tipoCuentaId], references: [id])
@@ -164,18 +164,18 @@ model TarjetaMovimiento {
 }
 
 model TarjetaCuota {
-  id               String    @id @default(uuid())
+  id               String   @id @default(uuid())
   usuarioId        String
   tarjetaId        String
   descripcion      String?
   montoOriginal    Decimal
   saldoPendiente   Decimal
   cuotasTotales    Int
-  cuotaActual      Int       @default(1)
+  cuotaActual      Int      @default(1)
   fechaInicio      DateTime
   fechaProximaPago DateTime?
-  creadaEn         DateTime  @default(now())
-  actualizadaEn    DateTime  @updatedAt
+  creadaEn         DateTime @default(now())
+  actualizadaEn    DateTime @updatedAt
 
   usuario     Usuario             @relation("UsuarioTarjetaCuota", fields: [usuarioId], references: [id])
   tarjeta     TarjetaCredito      @relation(fields: [tarjetaId], references: [id])
@@ -205,27 +205,34 @@ model Categoria {
 }
 
 model Transaccion {
-  id                String             @id @default(uuid())
+  id                String   @id @default(uuid())
   cuentaId          String
   usuarioId         String
   tipoTransaccionId String?
   monto             Decimal
-  moneda            String             @default("USD")
+  moneda            String   @default("USD")
   descripcion       String?
   categoriaId       String?
   ocurrioEn         DateTime
-  conciliada        Boolean            @default(false)
+  conciliada        Boolean  @default(false)
   direccion         Direccion
   referencia        String?
   etiquetas         String[]
+  
+  // === NUEVOS CAMPOS PARA TRANSFERENCIAS ===
+  transaccionRelacionadaId String?      @unique
+  transaccionRelacionada   Transaccion? @relation("TransferenciaPareja", fields: [transaccionRelacionadaId], references: [id])
+  otrasRelacionadas        Transaccion? @relation("TransferenciaPareja")
+  // =========================================
+
   tipoTransaccion   TipoTransaccion?   @relation(fields: [tipoTransaccionId], references: [id])
   tarjetaMovimiento TarjetaMovimiento? @relation("TransaccionTarjetaMov")
   creadaEn          DateTime           @default(now())
   actualizadaEn     DateTime           @updatedAt
 
-  cuenta          Cuenta                 @relation(fields: [cuentaId], references: [id])
-  usuario         Usuario                @relation(fields: [usuarioId], references: [id])
-  categoria       Categoria?             @relation(fields: [categoriaId], references: [id])
+  cuenta          Cuenta               @relation(fields: [cuentaId], references: [id])
+  usuario         Usuario              @relation(fields: [usuarioId], references: [id])
+  categoria       Categoria?           @relation(fields: [categoriaId], references: [id])
   categoriasPivot TransaccionCategoria[]
 
   @@index([cuentaId])

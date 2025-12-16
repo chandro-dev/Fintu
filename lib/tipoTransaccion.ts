@@ -1,20 +1,23 @@
-import { prisma } from "./db";
-
-const cache = new Map<string, string>();
+// src/lib/tipoTransaccion.ts
+import { prisma } from "@/lib/db";
 
 export async function getTipoTransaccionId(
-  codigo: string,
-  nombre: string,
-  descripcion?: string,
+  codigo: "NORMAL" | "TRANSFERENCIA" | "AJUSTE", // <--- Agregamos AJUSTE a los tipos permitidos
+  nombreDefecto: string,
+  descripcionDefecto: string
 ) {
-  if (cache.has(codigo)) {
-    return cache.get(codigo)!;
-  }
+  // Buscamos si existe, si no, lo creamos (Upsert)
   const tipo = await prisma.tipoTransaccion.upsert({
-    where: { codigo },
-    update: { nombre, descripcion },
-    create: { codigo, nombre, descripcion },
+    where: { 
+      codigo: codigo 
+    },
+    update: {}, // Si existe, no hacemos nada
+    create: {
+      codigo,
+      nombre: nombreDefecto,
+      descripcion: descripcionDefecto,
+    },
   });
-  cache.set(codigo, tipo.id);
+
   return tipo.id;
 }
