@@ -23,7 +23,7 @@ export class CategoriaService {
 
   // GET: Obtener todas
   static async obtenerTodas(opts: FetchOptions): Promise<Categoria[]> {
-    const res = await fetch("/api/categories", { // Asegúrate que tu ruta API sea esta o "/api/categorias"
+    const res = await fetch("/api/categorias", { // Asegúrate que tu ruta API sea esta o "/api/categorias"
       method: "GET",
       headers: this.headers(opts),
     });
@@ -33,7 +33,7 @@ export class CategoriaService {
 
   // POST: Crear
   static async crear(data: CreateCategoryDTO, opts: FetchOptions): Promise<Categoria> {
-    const res = await fetch("/api/categories", {
+    const res = await fetch("/api/categorias", {
       method: "POST",
       headers: this.headers(opts),
       body: JSON.stringify(data),
@@ -48,7 +48,7 @@ export class CategoriaService {
 
   // PATCH: Actualizar (Este es el que te faltaba)
   static async actualizar(id: string, data: Partial<CreateCategoryDTO>, opts: FetchOptions): Promise<Categoria> {
-    const res = await fetch("/api/categories", {
+    const res = await fetch("/api/categorias", {
       method: "PATCH",
       headers: this.headers(opts),
       body: JSON.stringify({ id, ...data }), // Enviamos ID dentro del body para mantener consistencia
@@ -63,7 +63,7 @@ export class CategoriaService {
 
   // DELETE: Eliminar
   static async eliminar(id: string, opts: FetchOptions): Promise<void> {
-    const res = await fetch("/api/categories", {
+    const res = await fetch("/api/categorias", {
       method: "DELETE",
       headers: this.headers(opts),
       body: JSON.stringify({ id }),

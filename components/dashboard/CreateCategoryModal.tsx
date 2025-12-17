@@ -26,7 +26,8 @@ export function CreateCategoryModal({ open, onClose, onSuccess, accessToken }: P
     if (!accessToken || !nombre) return;
     setBusy(true);
     try {
-await CategoriaService.crear({ nombre, tipo, color, icono }, { accessToken });      onSuccess();
+    await CategoriaService.crear({ nombre, tipo, color, icono }, { accessToken });
+      onSuccess();
       onClose();
       setNombre(""); // Reset
     } catch (e) {

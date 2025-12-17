@@ -16,19 +16,16 @@ export async function GET(request: Request) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-  // 💡 MEJORA: Parsear Query Params para filtros
   const { searchParams } = new URL(request.url);
   const accountId = searchParams.get("accountId");
-  const month = searchParams.get("month"); // Formato "YYYY-MM"
+  const month = searchParams.get("month");
   const limit = Number(searchParams.get("limit")) || 50;
 
   try {
     const whereClause: any = { usuarioId: user.id };
 
-    // Filtro por Cuenta
     if (accountId) whereClause.cuentaId = accountId;
 
-    // 💡 MEJORA: Filtro por Mes (esencial para Dashboard)
     if (month) {
       const [year, m] = month.split("-");
       const startDate = new Date(Number(year), Number(m) - 1, 1);
@@ -36,14 +33,12 @@ export async function GET(request: Request) {
       whereClause.ocurrioEn = { gte: startDate, lte: endDate };
     }
 
-  const transacciones = await prisma.transaccion.findMany({
+    const transacciones = await prisma.transaccion.findMany({
       where: whereClause,
       orderBy: { ocurrioEn: "desc" },
       take: limit,
       include: {
         categoria: true,
-        
-        // 👇 ESTO ES LO QUE TIENES AHORA (Correcto)
         cuenta: {
           select: {
             nombre: true,
@@ -52,11 +47,10 @@ export async function GET(request: Request) {
             tipoCuenta: { select: { codigo: true, nombre: true } },
           },
         },
-
-        // 👇 ESTO ES LO QUE TE FALTA. AGRÉGALO AQUÍ:
+        // Incluimos el tipo para poder filtrar en el frontend
         tipoTransaccion: {
           select: {
-            codigo: true, // Necesitamos que devuelva "NORMAL", "TRANSFERENCIA" o "AJUSTE"
+            codigo: true,
             nombre: true
           }
         }
@@ -87,6 +81,7 @@ export async function POST(request: Request) {
       descripcion,
       categoriaId,
       isTransferencia,
+      isAjuste, // <--- 1. Extraemos la bandera
     } = body ?? {};
 
     if (!cuentaId || !monto) {
@@ -96,7 +91,9 @@ export async function POST(request: Request) {
     const categoriaIdFinal = limpiarCategoriaId(categoriaId);
     const fecha = ocurrioEn ? new Date(ocurrioEn) : new Date();
 
-    // 💡 LÓGICA TRANSFERENCIA (Sin cambios mayores, ya estaba bien)
+    // ========================================================================
+    // CASO 1: TRANSFERENCIA
+    // ========================================================================
     if (isTransferencia && cuentaDestinoId) {
       if (cuentaId === cuentaDestinoId) {
         return NextResponse.json({ error: "Cuentas deben ser diferentes" }, { status: 400 });
@@ -105,7 +102,6 @@ export async function POST(request: Request) {
       const tipoTransferenciaId = await getTipoTransaccionId("TRANSFERENCIA", "Transferencia", "Interna");
 
       const result = await prisma.$transaction(async (tx) => {
-        // Salida
         const salida = await tx.transaccion.create({
           data: {
             usuarioId: user.id, cuentaId, monto: Number(monto), moneda, direccion: "SALIDA",
@@ -113,7 +109,6 @@ export async function POST(request: Request) {
             categoriaId: categoriaIdFinal, tipoTransaccionId: tipoTransferenciaId,
           }
         });
-        // Entrada
         const entrada = await tx.transaccion.create({
           data: {
             usuarioId: user.id, cuentaId: cuentaDestinoId, monto: Number(monto), moneda, direccion: "ENTRADA",
@@ -121,9 +116,7 @@ export async function POST(request: Request) {
             transaccionRelacionadaId: salida.id, tipoTransaccionId: tipoTransferenciaId,
           }
         });
-        // Link bidireccional
         await tx.transaccion.update({ where: { id: salida.id }, data: { transaccionRelacionadaId: entrada.id } });
-        // Saldos
         await tx.cuenta.update({ where: { id: cuentaId }, data: { saldo: { decrement: Number(monto) } } });
         await tx.cuenta.update({ where: { id: cuentaDestinoId }, data: { saldo: { increment: Number(monto) } } });
 
@@ -132,7 +125,47 @@ export async function POST(request: Request) {
       return NextResponse.json(result, { status: 201 });
     }
 
-    // 💡 LÓGICA NORMAL
+    // ========================================================================
+    // CASO 2: AJUSTE DE SALDO (NUEVO)
+    // ========================================================================
+    if (isAjuste) {
+        // Obtenemos el ID del tipo "AJUSTE" (lo crea si no existe)
+        const tipoAjusteId = await getTipoTransaccionId(
+            "AJUSTE",
+            "Ajuste de Saldo",
+            "Corrección manual del saldo"
+        );
+        
+        const delta = direccion === "ENTRADA" ? Number(monto) : -Number(monto);
+
+        const [txn] = await prisma.$transaction([
+            prisma.transaccion.create({
+                data: {
+                    usuarioId: user.id,
+                    cuentaId,
+                    monto: Number(monto),
+                    moneda,
+                    direccion, // ENTRADA o SALIDA
+                    ocurrioEn: fecha,
+                    descripcion: descripcion || "Ajuste de saldo",
+                    categoriaId: categoriaIdFinal,
+                    // AQUÍ ASIGNAMOS EL TIPO CORRECTO PARA QUE EL SUMMARY LO IGNORE:
+                    tipoTransaccionId: tipoAjusteId, 
+                    conciliada: true, // Los ajustes suelen nacer conciliados
+                },
+            }),
+            prisma.cuenta.update({
+                where: { id: cuentaId },
+                data: { saldo: { increment: delta } },
+            }),
+        ]);
+
+        return NextResponse.json(txn, { status: 201 });
+    }
+
+    // ========================================================================
+    // CASO 3: TRANSACCIÓN NORMAL (Ingreso/Gasto)
+    // ========================================================================
     if (!direccion) return NextResponse.json({ error: "Dirección requerida" }, { status: 400 });
 
     const tipoNormalId = await getTipoTransaccionId("NORMAL", "Normal", "Usuario");
@@ -174,15 +207,11 @@ export async function PATCH(request: Request) {
     const nextMonto = monto !== undefined ? Number(monto) : Number(existing.monto);
     const nextCuenta = cuentaId ?? existing.cuentaId;
 
-    // 💡 MEJORA: Manejo Inteligente de Transferencias
     if (existing.transaccionRelacionadaId) {
-      // Si intentan cambiar Monto o Cuenta en una transferencia, bloqueamos (demasiado complejo de reconciliar)
       if (nextMonto !== Number(existing.monto) || nextCuenta !== existing.cuentaId) {
         return NextResponse.json({ error: "Para cambiar monto o cuenta de una transferencia, elimínela y créela de nuevo." }, { status: 400 });
       }
 
-      // PERO, si solo cambian descripción, fecha o categoría, permitimos el cambio en AMBAS transacciones
-      // Esto mejora mucho la UX.
       const commonData = {
         descripcion: descripcion ?? existing.descripcion,
         ocurrioEn: ocurrioEn ? new Date(ocurrioEn) : existing.ocurrioEn,
@@ -197,7 +226,6 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ ok: true, message: "Transferencia actualizada" });
     }
 
-    // 💡 LÓGICA NORMAL (Actualización de Saldo si cambia monto/cuenta)
     const nextDireccion = direccion ?? existing.direccion;
     const oldDelta = existing.direccion === "ENTRADA" ? Number(existing.monto) : -Number(existing.monto);
     const newDelta = nextDireccion === "ENTRADA" ? nextMonto : -nextMonto;
@@ -209,16 +237,13 @@ export async function PATCH(request: Request) {
       descripcion: descripcion ?? existing.descripcion, categoriaId: categoriaIdFinal,
     };
 
-    // Caso 1: Misma cuenta, solo cambia monto/dirección
     if (existing.cuentaId === nextCuenta) {
       const diff = newDelta - oldDelta;
       await prisma.$transaction([
         prisma.transaccion.update({ where: { id }, data: dataToUpdate }),
         ...(diff !== 0 ? [prisma.cuenta.update({ where: { id: nextCuenta }, data: { saldo: { increment: diff } } })] : [])
       ]);
-    } 
-    // Caso 2: Cambio de cuenta (Revertir saldo en antigua, aplicar en nueva)
-    else {
+    } else {
       await prisma.$transaction([
         prisma.transaccion.update({ where: { id }, data: dataToUpdate }),
         prisma.cuenta.update({ where: { id: existing.cuentaId }, data: { saldo: { increment: -oldDelta } } }),
@@ -244,7 +269,6 @@ export async function DELETE(request: Request) {
     const existing = await prisma.transaccion.findUnique({ where: { id, usuarioId: user.id } });
     if (!existing) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
 
-    // 💡 LÓGICA TRANSFERENCIA (Borrar en cascada y revertir ambos saldos)
     if (existing.transaccionRelacionadaId) {
       const pareja = await prisma.transaccion.findUnique({ where: { id: existing.transaccionRelacionadaId }});
       
@@ -262,7 +286,6 @@ export async function DELETE(request: Request) {
       }
     }
 
-    // Lógica Normal
     const delta = existing.direccion === "ENTRADA" ? -Number(existing.monto) : Number(existing.monto);
     await prisma.$transaction([
       prisma.transaccion.delete({ where: { id } }),
