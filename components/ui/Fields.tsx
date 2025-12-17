@@ -54,7 +54,8 @@ export function NumberField({
   isCurrency = false,
   currency = "USD",
   allowNegative = false,
-  disabled = false, // Agregado por si acaso lo usas en el futuro
+  disabled = false,
+  placeholder, // <--- 1. Agregamos esto
 }: {
   label: string;
   value: number | string;
@@ -63,6 +64,7 @@ export function NumberField({
   currency?: string;
   allowNegative?: boolean;
   disabled?: boolean;
+  placeholder?: string; // <--- 2. Definimos el tipo
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm text-slate-700 dark:text-zinc-300">
@@ -80,6 +82,7 @@ export function NumberField({
           min={allowNegative ? undefined : "0"}
           value={value}
           disabled={disabled}
+          placeholder={placeholder} // <--- 3. Lo pasamos al input
           onChange={(e) => onChange(e.target.value)}
           className={`flex-1 rounded-lg border border-black/10 bg-white/80 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 dark:border-white/10 dark:bg-black/40 dark:text-white dark:focus:border-white/30
           ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
@@ -88,7 +91,6 @@ export function NumberField({
     </label>
   );
 }
-
 // ============================================================================
 // SELECT FIELD (Aquí estaba el error del Build)
 // ============================================================================

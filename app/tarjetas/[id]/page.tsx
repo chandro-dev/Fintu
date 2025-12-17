@@ -5,10 +5,23 @@ import { useParams, useRouter } from "next/navigation";
 import { formatMoney } from "@/lib/formatMoney";
 import { TarjetaService } from "@/lib/services/TarjetaService";
 import { TransactionListItem } from "@/components/transactions/TransactionListItem";
-import type { TarjetaMovimientoUI } from "@/components/transactions/types";
 import { useAppData } from "@/components/AppDataProvider";
 import CreditSimulator from "@/components/tarjetas/CreditSimulator";
+import type { TarjetaMovimientoUI } from "@/components/transactions/types";
+import { InstallmentsTab, CompraDiferida } from "@/components/tarjetas/InstallmentsTab";
 
+// Componentes UI Reutilizables
+import { InputField, SelectField, NumberField } from "@/components/ui/Fields";
+
+// Iconos
+import { 
+  CreditCard, Calendar, AlertCircle, Trash2, Edit3, 
+  Plus, ChevronLeft, Wallet, Layers
+} from "lucide-react";
+
+// ============================================================================
+// TIPOS
+// ============================================================================
 type TarjetaDetalle = {
   id: string;
   nombre: string;
@@ -21,537 +34,511 @@ type TarjetaDetalle = {
   diaPago: number;
   pagoMinimoPct?: number | null;
   estado?: string;
-  cuentaId: string;
+  cuentaId: string; // ID de la cuenta "sombra" asociada
 };
 
 type MovimientoTipo = "COMPRA" | "PAGO" | "INTERES" | "CUOTA" | "AJUSTE";
 
-const MOV_TIPO_LABEL: Record<MovimientoTipo, string> = {
+const MOV_TIPO_OPTIONS = [
+  { label: "Compra", value: "COMPRA" },
+  { label: "Pago (Abono a deuda)", value: "PAGO" },
+  { label: "Interés cobrado", value: "INTERES" },
+  { label: "Pago de cuota específica", value: "CUOTA" },
+  { label: "Ajuste de saldo", value: "AJUSTE" },
+];
+
+const MOV_TIPO_LABEL: Record<string, string> = {
   COMPRA: "Compra",
   PAGO: "Pago",
-  INTERES: "Interes",
-  CUOTA: "Pago de cuota",
+  INTERES: "Interés",
+  CUOTA: "Pago Cuota",
   AJUSTE: "Ajuste",
 };
 
+// ============================================================================
+// COMPONENTE: TARJETA VISUAL
+// ============================================================================
+function VisualCreditCard({ tarjeta, utilizado, disponible }: { tarjeta: TarjetaDetalle, utilizado: number, disponible: number }) {
+  const usagePct = Math.min((utilizado / tarjeta.cupoTotal) * 100, 100);
+  
+  return (
+    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-black p-6 text-white shadow-2xl transition-transform hover:scale-[1.01]">
+      {/* Background Decorativo */}
+      <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-sky-500/20 blur-3xl"></div>
+      <div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-indigo-500/20 blur-3xl"></div>
+
+      <div className="relative z-10 flex flex-col justify-between h-full min-h-[180px]">
+        <div className="flex justify-between items-start">
+           <div>
+             <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">{tarjeta.emisor || "CREDIT CARD"}</p>
+             <h2 className="text-2xl font-bold mt-1 tracking-wide">{tarjeta.nombre}</h2>
+           </div>
+           <CreditCard size={32} className="text-white/80" />
+        </div>
+
+        <div className="mt-6">
+           <div className="flex justify-between text-xs text-slate-300 mb-1 uppercase tracking-wider">
+              <span>Saldo Utilizado</span>
+              <span>Cupo Total</span>
+           </div>
+           <div className="flex justify-between items-end mb-2">
+              <span className="text-2xl font-mono font-bold text-white">{formatMoney(utilizado, tarjeta.moneda)}</span>
+              <span className="text-sm font-mono text-slate-400">{formatMoney(tarjeta.cupoTotal, tarjeta.moneda)}</span>
+           </div>
+           
+           <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-500 ${usagePct > 90 ? 'bg-rose-500' : 'bg-sky-500'}`} 
+                style={{ width: `${usagePct}%` }} 
+              />
+           </div>
+           <div className="flex justify-between mt-2 text-xs">
+              <span className="text-emerald-400 font-medium">Disponible: {formatMoney(disponible, tarjeta.moneda)}</span>
+              <span className="text-slate-400">{usagePct.toFixed(1)}% utilizado</span>
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// PÁGINA PRINCIPAL
+// ============================================================================
 export default function TarjetaDetallePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const tarjetaId = params?.id ?? "";
-  const { session } = useAppData();
+  
+  const { session, cuentas } = useAppData(); 
+  const accessToken = session?.access_token;
+
+  // Estados de Datos
   const [tarjeta, setTarjeta] = useState<TarjetaDetalle | null>(null);
   const [movimientos, setMovimientos] = useState<TarjetaMovimientoUI[]>([]);
   const [loading, setLoading] = useState(true);
   const [movLoading, setMovLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [movBusy, setMovBusy] = useState(false);
-  const [movError, setMovError] = useState<string | null>(null);
+
+  // Estados de Tabs y Cuotas
+  const [activeTab, setActiveTab] = useState<"MOVIMIENTOS" | "CUOTAS">("MOVIMIENTOS");
+  const [comprasActivas, setComprasActivas] = useState<CompraDiferida[]>([]);
+  const [loadingCompras, setLoadingCompras] = useState(false);
+
+  // Estados de Modales
+  const [showMovModal, setShowMovModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Formulario Movimiento
   const [movForm, setMovForm] = useState({
     tipo: "COMPRA" as MovimientoTipo,
-    monto: 0,
+    monto: "",
     descripcion: "",
     ocurrioEn: new Date().toISOString().slice(0, 16),
     enCuotas: false,
     cuotasTotales: 1,
     cuotaId: "",
+    cuentaOrigenId: "",
   });
-  const [editModal, setEditModal] = useState(false);
-  const [editBusy, setEditBusy] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({
-    nombre: "",
-    emisor: "",
-    cupoTotal: 0,
-    saldoActual: 0,
-    tasaEfectivaAnual: 0,
-    diaCorte: 1,
-    diaPago: 10,
-    pagoMinimoPct: 0,
-  });
-  const [deleteBusy, setDeleteBusy] = useState(false);
 
-  const accessToken = session?.access_token;
+  // Formulario Edición
+  const [editForm, setEditForm] = useState<any>({});
 
-  const loadMovimientos = async () => {
+  // 1. CARGA DE DATOS
+  const loadData = async () => {
     if (!accessToken || !tarjetaId) return;
-    setMovLoading(true);
-    setMovError(null);
     try {
-      const movRes = await fetch(`/api/tarjetas/movimientos?tarjetaId=${tarjetaId}`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        credentials: "include",
-      });
-      if (movRes.ok) {
-        setMovimientos(await movRes.json());
-      } else {
-        setMovError("No se pudieron cargar los movimientos");
-      }
-    } catch (err) {
-      setMovError(err instanceof Error ? err.message : "Error desconocido");
-    } finally {
-      setMovLoading(false);
-    }
-  };
-
-  const loadTarjeta = async () => {
-    if (!accessToken || !tarjetaId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const tarjetas = await TarjetaService.listar({ accessToken });
-      const found = tarjetas.find((t: TarjetaDetalle) => t.id === tarjetaId);
+      // A. Cargar Tarjeta
+      const tarjetasRes = await TarjetaService.listar({ accessToken });
+      const found = tarjetasRes.find((t: any) => t.id === tarjetaId);
       setTarjeta(found ?? null);
+      if (found) setEditForm(found);
+
+      // B. Cargar Movimientos
+      setMovLoading(true);
+      const movRes = await fetch(`/api/tarjetas/movimientos?tarjetaId=${tarjetaId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (movRes.ok) setMovimientos(await movRes.json());
+      
+      // C. Cargar Compras Diferidas
+      setLoadingCompras(true);
+      try {
+          const compras = await TarjetaService.listarComprasActivas(tarjetaId, { accessToken });
+          setComprasActivas(compras);
+      } catch(e) { console.error("Error compras", e); }
+      finally { setLoadingCompras(false); }
+
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error desconocido");
+      setError("Error cargando información");
     } finally {
       setLoading(false);
+      setMovLoading(false);
     }
-  };
-
-  const loadData = async () => {
-    await Promise.all([loadTarjeta(), loadMovimientos()]);
   };
 
   useEffect(() => {
     if (accessToken) void loadData();
   }, [accessToken, tarjetaId]);
 
+  // Cálculos Derivados
   const utilizado = useMemo(() => Number(tarjeta?.saldoActual ?? 0), [tarjeta?.saldoActual]);
-  const disponible = useMemo(
-    () => Math.max(Number(tarjeta?.cupoTotal ?? 0) - utilizado, 0),
-    [tarjeta?.cupoTotal, utilizado],
-  );
+  const disponible = useMemo(() => Math.max(Number(tarjeta?.cupoTotal ?? 0) - utilizado, 0), [tarjeta?.cupoTotal, utilizado]);
+  
   const pagoMinimoSugerido = useMemo(() => {
     const pct = Number(tarjeta?.pagoMinimoPct ?? 0);
-    if (!pct || pct <= 0) return 0;
-    return (utilizado * pct) / 100;
+    return pct > 0 ? (utilizado * pct) / 100 : 0;
   }, [tarjeta?.pagoMinimoPct, utilizado]);
 
-  useEffect(() => {
-    if (!tarjeta) return;
-    setEditForm({
-      nombre: tarjeta.nombre,
-      emisor: tarjeta.emisor ?? "",
-      cupoTotal: Number(tarjeta.cupoTotal ?? 0),
-      saldoActual: Number(tarjeta.saldoActual ?? 0),
-      tasaEfectivaAnual: Number(tarjeta.tasaEfectivaAnual ?? 0),
-      diaCorte: tarjeta.diaCorte,
-      diaPago: tarjeta.diaPago,
-      pagoMinimoPct: Number(tarjeta.pagoMinimoPct ?? 0),
-    });
-  }, [tarjeta]);
+  // 2. HANDLERS
+
+  // Pre-llenar modal para pagar una cuota específica
+  const handlePagarCuota = (compra: CompraDiferida) => {
+      const cuotasRestantesAprox = Math.max(1, compra.cuotasTotales); // Simplificación visual
+      const montoSugerido = Number(compra.saldoPendiente) / cuotasRestantesAprox;
+
+      setMovForm({
+          tipo: "CUOTA",
+          monto: String(Math.ceil(montoSugerido)),
+          descripcion: `Abono Cuota: ${compra.descripcion}`,
+          ocurrioEn: new Date().toISOString().slice(0, 16),
+          enCuotas: false,
+          cuotasTotales: 1,
+          cuotaId: compra.id, // ID para el backend
+          cuentaOrigenId: "" // Usuario elige
+      });
+      setShowMovModal(true);
+  };
 
   const handleRegistrarMovimiento = async () => {
-    if (!accessToken) return setMovError("No hay sesion");
-    if (!tarjetaId) return setMovError("Tarjeta no encontrada");
-    if (!movForm.monto || movForm.monto <= 0) return setMovError("Monto > 0 requerido");
+    if (!accessToken) return;
+    
+    // Validaciones
+    if ((movForm.tipo === "PAGO" || movForm.tipo === "CUOTA") && !movForm.cuentaOrigenId) {
+        setActionError("Selecciona la cuenta bancaria de origen para el pago.");
+        return;
+    }
+    if (!movForm.monto || Number(movForm.monto) <= 0) {
+        setActionError("El monto debe ser mayor a 0.");
+        return;
+    }
 
-    setMovBusy(true);
-    setMovError(null);
+    setBusy(true);
+    setActionError(null);
     try {
-      await TarjetaService.registrarMovimiento(
-        {
+      await TarjetaService.registrarMovimiento({
           tarjetaId,
           tipo: movForm.tipo,
-          monto: movForm.monto,
+          monto: Number(movForm.monto),
           descripcion: movForm.descripcion,
           ocurrioEn: movForm.ocurrioEn ? new Date(movForm.ocurrioEn).toISOString() : undefined,
           enCuotas: movForm.enCuotas,
-          cuotasTotales: movForm.enCuotas ? movForm.cuotasTotales : undefined,
+          cuotasTotales: movForm.enCuotas ? Number(movForm.cuotasTotales) : undefined,
           cuotaId: movForm.tipo === "CUOTA" ? movForm.cuotaId || undefined : undefined,
-        },
-        { accessToken },
-      );
-      setShowModal(false);
+          cuentaOrigenId: (movForm.tipo === "PAGO" || movForm.tipo === "CUOTA") ? movForm.cuentaOrigenId : undefined,
+      }, { accessToken });
+
+      setShowMovModal(false);
+      setMovForm(prev => ({ ...prev, monto: "", descripcion: "", enCuotas: false, cuotaId: "" })); 
       await loadData();
     } catch (err) {
-      setMovError(err instanceof Error ? err.message : "Error desconocido");
+      setActionError(err instanceof Error ? err.message : "Error al registrar");
     } finally {
-      setMovBusy(false);
+      setBusy(false);
     }
   };
 
   const handleUpdateTarjeta = async () => {
-    if (!accessToken) return setEditError("No hay sesion");
-    setEditBusy(true);
-    setEditError(null);
+    if (!accessToken) return;
+    setBusy(true);
     try {
       await TarjetaService.actualizar(tarjetaId, editForm, { accessToken });
-      setEditModal(false);
+      setShowEditModal(false);
       await loadData();
     } catch (err) {
-      setEditError(err instanceof Error ? err.message : "Error desconocido");
+      setActionError("Error al actualizar");
     } finally {
-      setEditBusy(false);
+      setBusy(false);
     }
   };
 
   const handleEliminarTarjeta = async () => {
-    if (!accessToken) return;
-    if (!window.confirm("Eliminar la tarjeta tambien elimina sus movimientos. Continuar?")) return;
-    setDeleteBusy(true);
+    if (!accessToken || !confirm("¿Eliminar esta tarjeta y todo su historial?")) return;
+    setBusy(true);
     try {
       await TarjetaService.eliminar(tarjetaId, { accessToken });
       router.push("/tarjetas");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo eliminar");
+      alert("No se pudo eliminar");
     } finally {
-      setDeleteBusy(false);
+      setBusy(false);
     }
   };
 
-  if (!loading && !tarjeta) {
-    return (
-      <div className="px-6 py-10 text-slate-900 dark:text-zinc-50">Tarjeta no encontrada</div>
-    );
-  }
+  if (loading) return <div className="p-20 text-center opacity-50">Cargando tarjeta...</div>;
+  if (!tarjeta) return <div className="p-20 text-center text-slate-500">Tarjeta no encontrada</div>;
 
   return (
-    <div className="min-h-screen px-6 py-10 text-slate-900 dark:text-zinc-50">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-sky-500">Tarjeta</p>
-            <h1 className="text-3xl font-semibold">{tarjeta?.nombre ?? "Tarjeta"}</h1>
-            <p className="text-sm text-slate-600 dark:text-zinc-400">
-              Emisor: {tarjeta?.emisor ?? "-"} | Corte: {tarjeta?.diaCorte} | Pago: {tarjeta?.diaPago}
-            </p>
-          </div>
-          <div className="text-right text-sm">
-            <p>Saldo: {formatMoney(utilizado, tarjeta?.moneda ?? "COP")}</p>
-            <p className="text-slate-500">
-              Disponible: {formatMoney(disponible, tarjeta?.moneda ?? "COP")}
-            </p>
-            {pagoMinimoSugerido > 0 && (
-              <p className="text-xs text-amber-500">
-                Pago minimo sugerido: {formatMoney(pagoMinimoSugerido, tarjeta?.moneda ?? "COP")}
-              </p>
-            )}
-          </div>
+    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 px-4 md:px-6 py-8 pb-20 text-slate-900 dark:text-zinc-50">
+      <div className="mx-auto max-w-5xl space-y-8">
+        
+        {/* HEADER DE NAVEGACIÓN */}
+        <div className="flex items-center gap-3">
+             <button onClick={() => router.push("/tarjetas")} className="p-2 rounded-full border border-slate-200 hover:bg-slate-100 dark:border-white/10 dark:hover:bg-white/5 transition-colors">
+                <ChevronLeft size={20} />
+             </button>
+             <h1 className="text-xl font-bold">Detalle de Tarjeta</h1>
         </div>
 
-        {error && (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
-            {error}
-          </div>
-        )}
+        {error && <div className="p-4 bg-rose-100 text-rose-800 rounded-xl">{error}</div>}
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow dark:border-white/10 dark:bg-black/30">
-            <p className="text-xs text-slate-500">Cupo total</p>
-            <p className="text-xl font-semibold">{formatMoney(Number(tarjeta?.cupoTotal ?? 0), tarjeta?.moneda ?? "COP")}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow dark:border-white/10 dark:bg-black/30">
-            <p className="text-xs text-slate-500">TEA</p>
-            <p className="text-xl font-semibold">{tarjeta?.tasaEfectivaAnual ?? 0}%</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow dark:border-white/10 dark:bg-black/30">
-            <p className="text-xs text-slate-500">Estado</p>
-            <p className="text-xl font-semibold">{tarjeta?.estado ?? "Activa"}</p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => setShowModal(true)}
-            className="rounded-full bg-sky-500 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-400"
-          >
-            Registrar movimiento
-          </button>
-          <button
-            onClick={() => setEditModal(true)}
-            className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
-          >
-            Editar tarjeta
-          </button>
-          <button
-            onClick={handleEliminarTarjeta}
-            disabled={deleteBusy}
-            className="rounded-full border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-500/40 dark:text-red-200 dark:hover:bg-red-500/10"
-          >
-            {deleteBusy ? "Eliminando..." : "Eliminar"}
-          </button>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow dark:border-white/10 dark:bg-black/30">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Movimientos</h3>
-            {movLoading && <span className="text-xs text-slate-500">Actualizando...</span>}
-          </div>
-          {movError && (
-            <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
-              {movError}
+        {/* LAYOUT SUPERIOR: TARJETA + SIMULADOR */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-6">
+                <VisualCreditCard tarjeta={tarjeta} utilizado={utilizado} disponible={disponible} />
+                <div className="grid grid-cols-3 gap-3">
+                    <InfoCard label="Corte" value={`Día ${tarjeta.diaCorte}`} icon={Calendar} />
+                    <InfoCard label="Pago" value={`Día ${tarjeta.diaPago}`} icon={Calendar} />
+                    <InfoCard label="TEA" value={`${tarjeta.tasaEfectivaAnual}%`} icon={AlertCircle} />
+                </div>
             </div>
-          )}
-          <div className="mt-3 space-y-2">
-            {movimientos.map((m: TarjetaMovimientoUI) => (
-              <TransactionListItem
-                key={m.id}
-                tx={{
-                  id: m.id,
-                  cuentaId: tarjeta?.cuentaId ?? "",
-                  usuarioId: session?.user?.id ?? "",
-                  monto: m.monto,
-                  moneda: tarjeta?.moneda ?? "COP",
-                  descripcion: m.descripcion ?? MOV_TIPO_LABEL[m.tipo],
-                  ocurrioEn: m.ocurrioEn,
-                  direccion:
-                    m.transaccion?.direccion ??
-                    (m.tipo === "PAGO" || m.tipo === "CUOTA" ? "ENTRADA" : "SALIDA"),
-                  categoria: null,
-                  tipoTransaccionId: null,
-                  tipoTransaccion: null,
-                  cuenta: {
-                    nombre: tarjeta?.nombre ?? "Tarjeta",
-                    moneda: tarjeta?.moneda ?? "COP",
-                  },
-                } as any}
-                onEdit={() => {}}
-              />
-            ))}
 
-            {movimientos.length === 0 && !loading && (
-              <p className="text-sm text-slate-500 dark:text-zinc-400">Sin movimientos todavia.</p>
-            )}
-          </div>
+            <div className="flex flex-col gap-4">
+                <CreditSimulator 
+                    tasaEfectivaAnual={tarjeta.tasaEfectivaAnual} 
+                    moneda={tarjeta.moneda}
+                    saldoActual={utilizado}
+                    cupoTotal={tarjeta.cupoTotal}
+                />
+                <div className="grid grid-cols-2 gap-3 mt-auto">
+                    <button 
+                        onClick={() => {
+                            setMovForm(prev => ({ ...prev, tipo: "COMPRA", monto: "", descripcion: "", cuotaId: "" }));
+                            setShowMovModal(true);
+                        }}
+                        className="col-span-2 flex items-center justify-center gap-2 py-3 rounded-xl bg-sky-600 text-white font-bold shadow-lg shadow-sky-900/20 hover:bg-sky-500 hover:scale-[1.02] active:scale-95 transition-all"
+                    >
+                        <Plus size={20} /> Registrar Movimiento
+                    </button>
+                    <button onClick={() => setShowEditModal(true)} className="flex items-center justify-center gap-2 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5 transition-all font-medium">
+                        <Edit3 size={18} /> Editar
+                    </button>
+                    <button onClick={handleEliminarTarjeta} className="flex items-center justify-center gap-2 py-3 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900/30 dark:hover:bg-rose-900/20 transition-all font-medium">
+                        <Trash2 size={18} />
+                    </button>
+                </div>
+            </div>
         </div>
 
-        <CreditSimulator
-          tasaEfectivaAnual={Number(tarjeta?.tasaEfectivaAnual ?? 0)}
-          moneda={tarjeta?.moneda ?? "COP"}
-          saldoActual={utilizado}
-          cupoTotal={Number(tarjeta?.cupoTotal ?? 0)}
-        />
+        {/* CONTENIDO PRINCIPAL: TABS (Historial vs Cuotas) */}
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-black/20">
+            
+            {/* Header de Pestañas */}
+            <div className="flex gap-6 border-b border-slate-100 dark:border-white/5 mb-6">
+               <button 
+                  onClick={() => setActiveTab("MOVIMIENTOS")}
+                  className={`pb-3 text-sm font-bold border-b-2 transition-all ${
+                      activeTab === "MOVIMIENTOS" 
+                      ? "border-sky-500 text-sky-600 dark:text-sky-400" 
+                      : "border-transparent text-slate-400 hover:text-slate-600"
+                  }`}
+               >
+                  Historial de Movimientos
+               </button>
+               <button 
+                  onClick={() => setActiveTab("CUOTAS")}
+                  className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+                      activeTab === "CUOTAS" 
+                      ? "border-sky-500 text-sky-600 dark:text-sky-400" 
+                      : "border-transparent text-slate-400 hover:text-slate-600"
+                  }`}
+               >
+                  Compras Diferidas
+                  {comprasActivas.length > 0 && (
+                      <span className="bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full text-[10px]">
+                          {comprasActivas.length}
+                      </span>
+                  )}
+               </button>
+            </div>
+
+            {/* Contenido de Pestañas */}
+            {activeTab === "MOVIMIENTOS" ? (
+                <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                    {movLoading ? (
+                        <div className="py-10 text-center opacity-50">Cargando movimientos...</div>
+                    ) : (
+                        <>
+                           {movimientos.length === 0 && <p className="text-center py-10 text-slate-500">Sin movimientos aún.</p>}
+                           {movimientos.map((m) => (
+                               <TransactionListItem
+                                    key={m.id}
+                                    tx={{
+                                        id: m.id,
+                                        monto: m.monto,
+                                        moneda: tarjeta.moneda,
+                                        descripcion: m.descripcion ?? MOV_TIPO_LABEL[m.tipo ?? "COMPRA"],
+                                        ocurrioEn: m.ocurrioEn,
+                                        direccion: m.tipo === "PAGO" || m.tipo === "CUOTA" ? "ENTRADA" : "SALIDA",
+                                        categoria: null,
+                                        cuenta: { nombre: "Tarjeta", moneda: tarjeta.moneda },
+                                        cuentaId: tarjeta.cuentaId,
+                                        usuarioId: "user",
+                                        tipoTransaccion: null
+                                    } as any}
+                                    onEdit={() => {}} 
+                                />
+                           ))}
+                        </>
+                    )}
+                </div>
+            ) : (
+                <InstallmentsTab 
+                    compras={comprasActivas}
+                    loading={loadingCompras}
+                    moneda={tarjeta.moneda}
+                    onPagar={handlePagarCuota}
+                />
+            )}
+        </div>
       </div>
 
-      {showModal && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-3xl rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-zinc-950">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Nuevo movimiento</h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-900 hover:bg-slate-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
-              >
-                Cerrar
-              </button>
-            </div>
+      {/* ================= MODAL: NUEVO MOVIMIENTO ================= */}
+      {showMovModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-white/10 p-6 shadow-2xl animate-in zoom-in-95">
+             <div className="flex justify-between items-center mb-6">
+                 <h3 className="text-xl font-bold dark:text-white">
+                    {movForm.tipo === "CUOTA" ? "Abonar a Cuota" : "Registrar en Tarjeta"}
+                 </h3>
+                 <button onClick={() => setShowMovModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full">✕</button>
+             </div>
+             
+             {actionError && <div className="mb-4 p-3 bg-rose-50 text-rose-600 rounded-lg text-sm">{actionError}</div>}
 
-            {movError && (
-              <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
-                {movError}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Tipo</span>
-                <select
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                  value={movForm.tipo}
-                  onChange={(e) => setMovForm((f) => ({ ...f, tipo: e.target.value as MovimientoTipo }))}
-                >
-                  <option value="COMPRA">Compra</option>
-                  <option value="PAGO">Pago</option>
-                  <option value="INTERES">Interes</option>
-                  <option value="CUOTA">Pago de cuota</option>
-                  <option value="AJUSTE">Ajuste</option>
-                </select>
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Monto</span>
-                <input
-                  type="number"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                  value={movForm.monto}
-                  onChange={(e) => setMovForm((f) => ({ ...f, monto: Number(e.target.value) }))}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Descripcion</span>
-                <input
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                  value={movForm.descripcion}
-                  onChange={(e) => setMovForm((f) => ({ ...f, descripcion: e.target.value }))}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Fecha</span>
-                <input
-                  type="datetime-local"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                  value={movForm.ocurrioEn}
-                  onChange={(e) => setMovForm((f) => ({ ...f, ocurrioEn: e.target.value }))}
-                />
-              </label>
-              {movForm.tipo === "COMPRA" && (
-                <div className="md:col-span-2 rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-600 dark:border-white/20 dark:text-zinc-300">
-                  <label className="flex items-center gap-2 text-xs">
-                    <input
-                      type="checkbox"
-                      checked={movForm.enCuotas}
-                      onChange={(e) => setMovForm((f) => ({ ...f, enCuotas: e.target.checked }))}
+             <div className="space-y-4">
+                 <div className="grid grid-cols-2 gap-4">
+                    <SelectField 
+                        label="Tipo" 
+                        value={movForm.tipo} 
+                        onChange={(v) => setMovForm(p => ({...p, tipo: v as MovimientoTipo}))} 
+                        options={MOV_TIPO_OPTIONS}
+                        disabled={movForm.tipo === "CUOTA"} // Bloquear si viene de la pestaña cuotas
                     />
-                    Comprar en cuotas
-                  </label>
-                  {movForm.enCuotas && (
-                    <div className="mt-2 flex items-center gap-2 text-xs">
-                      <input
-                        type="number"
-                        min={2}
-                        className="w-20 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                        value={movForm.cuotasTotales}
-                        onChange={(e) =>
-                          setMovForm((f) => ({ ...f, cuotasTotales: Math.max(2, Number(e.target.value)) }))
-                        }
-                      />
-                      <span className="text-slate-500">Cuotas</span>
-                    </div>
-                  )}
-                </div>
-              )}
-              {movForm.tipo === "CUOTA" && (
-                <label className="md:col-span-2 space-y-1">
-                  <span className="text-xs text-slate-500">ID de cuota (opcional)</span>
-                  <input
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                    value={movForm.cuotaId}
-                    onChange={(e) => setMovForm((f) => ({ ...f, cuotaId: e.target.value }))}
-                    placeholder="Cuota a la que abonas"
-                  />
-                </label>
-              )}
-            </div>
+                    <NumberField 
+                        label="Monto" 
+                        value={movForm.monto} 
+                        onChange={(v) => setMovForm(p => ({...p, monto: v}))} 
+                        isCurrency currency={tarjeta.moneda}
+                    />
+                 </div>
 
-            <div className="mt-4 flex gap-3">
-              <button
-                onClick={() => setShowModal(false)}
-                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleRegistrarMovimiento}
-                disabled={movBusy}
-                className="rounded-full bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-400 disabled:opacity-50"
-              >
-                {movBusy ? "Guardando..." : "Guardar movimiento"}
-              </button>
-            </div>
+                 <InputField 
+                    label="Descripción" 
+                    value={movForm.descripcion} 
+                    onChange={(v) => setMovForm(p => ({...p, descripcion: v}))} 
+                    placeholder="Ej: Cena, Uber, Abono..."
+                 />
+
+                 <InputField 
+                    label="Fecha" 
+                    type="datetime-local"
+                    value={movForm.ocurrioEn} 
+                    onChange={(v) => setMovForm(p => ({...p, ocurrioEn: v}))} 
+                 />
+
+                 {/* SI ES COMPRA */}
+                 {movForm.tipo === "COMPRA" && (
+                     <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 space-y-3">
+                        <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                            <input type="checkbox" checked={movForm.enCuotas} onChange={(e) => setMovForm(p => ({...p, enCuotas: e.target.checked}))} className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500" />
+                            <span>Diferir a cuotas</span>
+                        </label>
+                        {movForm.enCuotas && (
+                            <NumberField 
+                                label="Número de Cuotas" 
+                                value={movForm.cuotasTotales} 
+                                onChange={(v) => setMovForm(p => ({...p, cuotasTotales: Number(v)}))} 
+                            />
+                        )}
+                     </div>
+                 )}
+
+                 {/* SI ES PAGO O CUOTA (Require Cuenta Origen) */}
+                 {(movForm.tipo === "PAGO" || movForm.tipo === "CUOTA") && (
+                     <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30">
+                        <div className="flex items-center gap-2 mb-2 text-emerald-700 dark:text-emerald-400 font-bold text-sm">
+                            <Wallet size={16} /> <span>Origen de los fondos</span>
+                        </div>
+                        <SelectField 
+                            label="Cuenta Bancaria (De donde sale el dinero)"
+                            placeholder="Selecciona cuenta..."
+                            value={movForm.cuentaOrigenId}
+                            onChange={(v) => setMovForm(p => ({...p, cuentaOrigenId: v}))}
+                            options={cuentas.map(c => ({ 
+                                label: `${c.nombre} (Saldo: ${formatMoney(Number(c.saldo), c.moneda)})`, 
+                                value: c.id 
+                            }))}
+                        />
+                     </div>
+                 )}
+             </div>
+
+             <div className="flex justify-end gap-3 mt-8">
+                 <button onClick={() => setShowMovModal(false)} className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-800">Cancelar</button>
+                 <button onClick={handleRegistrarMovimiento} disabled={busy} className="px-6 py-2 rounded-full bg-sky-600 text-white font-bold hover:bg-sky-500 disabled:opacity-50 shadow-lg">
+                    {busy ? "Guardando..." : "Registrar"}
+                 </button>
+             </div>
           </div>
         </div>
       )}
 
-      {editModal && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-3xl rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-zinc-950">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Editar tarjeta</h3>
-              <button
-                onClick={() => setEditModal(false)}
-                className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-900 hover:bg-slate-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
-              >
-                Cerrar
-              </button>
-            </div>
-            {editError && (
-              <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
-                {editError}
-              </div>
-            )}
-            <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Nombre</span>
-                <input
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                  value={editForm.nombre}
-                  onChange={(e) => setEditForm((f) => ({ ...f, nombre: e.target.value }))}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Emisor</span>
-                <input
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                  value={editForm.emisor}
-                  onChange={(e) => setEditForm((f) => ({ ...f, emisor: e.target.value }))}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Cupo total</span>
-                <input
-                  type="number"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                  value={editForm.cupoTotal}
-                  onChange={(e) => setEditForm((f) => ({ ...f, cupoTotal: Number(e.target.value) }))}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Saldo actual</span>
-                <input
-                  type="number"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                  value={editForm.saldoActual}
-                  onChange={(e) => setEditForm((f) => ({ ...f, saldoActual: Number(e.target.value) }))}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">TEA (%)</span>
-                <input
-                  type="number"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                  value={editForm.tasaEfectivaAnual}
-                  onChange={(e) => setEditForm((f) => ({ ...f, tasaEfectivaAnual: Number(e.target.value) }))}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Pago minimo (%)</span>
-                <input
-                  type="number"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                  value={editForm.pagoMinimoPct}
-                  onChange={(e) => setEditForm((f) => ({ ...f, pagoMinimoPct: Number(e.target.value) }))}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Dia de corte</span>
-                <input
-                  type="number"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                  value={editForm.diaCorte}
-                  onChange={(e) => setEditForm((f) => ({ ...f, diaCorte: Number(e.target.value) }))}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Dia de pago</span>
-                <input
-                  type="number"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                  value={editForm.diaPago}
-                  onChange={(e) => setEditForm((f) => ({ ...f, diaPago: Number(e.target.value) }))}
-                />
-              </label>
-            </div>
-            <div className="mt-4 flex gap-3">
-              <button
-                onClick={() => setEditModal(false)}
-                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleUpdateTarjeta}
-                disabled={editBusy}
-                className="rounded-full bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-400 disabled:opacity-50"
-              >
-                {editBusy ? "Guardando..." : "Guardar cambios"}
-              </button>
-            </div>
+      {/* ================= MODAL: EDITAR TARJETA ================= */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-white/10 p-6 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+             <div className="flex justify-between items-center mb-6">
+                 <h3 className="text-xl font-bold dark:text-white">Configuración de Tarjeta</h3>
+                 <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full">✕</button>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <InputField label="Nombre" value={editForm.nombre} onChange={(v) => setEditForm((p:any) => ({...p, nombre: v}))} />
+                 <InputField label="Emisor" value={editForm.emisor} onChange={(v) => setEditForm((p:any) => ({...p, emisor: v}))} />
+                 
+                 <NumberField label="Cupo Total" value={editForm.cupoTotal} onChange={(v) => setEditForm((p:any) => ({...p, cupoTotal: Number(v)}))} isCurrency />
+                 <NumberField label="Saldo Actual (Deuda)" value={editForm.saldoActual} onChange={(v) => setEditForm((p:any) => ({...p, saldoActual: Number(v)}))} isCurrency />
+                 
+                 <NumberField label="Tasa E.A. (%)" value={editForm.tasaEfectivaAnual} onChange={(v) => setEditForm((p:any) => ({...p, tasaEfectivaAnual: Number(v)}))} />
+                 <NumberField label="Día Corte" value={editForm.diaCorte} onChange={(v) => setEditForm((p:any) => ({...p, diaCorte: Number(v)}))} />
+                 <NumberField label="Día Pago" value={editForm.diaPago} onChange={(v) => setEditForm((p:any) => ({...p, diaPago: Number(v)}))} />
+                 <NumberField label="% Pago Mínimo" value={editForm.pagoMinimoPct} onChange={(v) => setEditForm((p:any) => ({...p, pagoMinimoPct: Number(v)}))} />
+             </div>
+
+             <div className="flex justify-end gap-3 mt-8">
+                 <button onClick={() => setShowEditModal(false)} className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-800">Cancelar</button>
+                 <button onClick={handleUpdateTarjeta} disabled={busy} className="px-6 py-2 rounded-full bg-sky-600 text-white font-bold hover:bg-sky-500 disabled:opacity-50">
+                    {busy ? "Guardando..." : "Guardar Cambios"}
+                 </button>
+             </div>
           </div>
         </div>
       )}
+
     </div>
   );
+}
+
+// Subcomponente simple para datos
+function InfoCard({ label, value, icon: Icon }: any) {
+    return (
+        <div className="flex flex-col items-center justify-center p-3 rounded-xl bg-white dark:bg-white/5 border border-slate-100 dark:border-white/5 shadow-sm text-center">
+            <Icon size={20} className="text-slate-400 mb-1" />
+            <span className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">{label}</span>
+            <span className="text-lg font-bold text-slate-800 dark:text-white">{value}</span>
+        </div>
+    )
 }

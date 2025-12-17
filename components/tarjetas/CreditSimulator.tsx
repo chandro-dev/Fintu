@@ -1,7 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { formatMoney } from "@/lib/formatMoney";
+import { 
+  Calculator, 
+  TrendingDown, 
+  AlertTriangle, 
+  PiggyBank, 
+  Clock, 
+  DollarSign 
+} from "lucide-react";
+import { NumberField } from "@/components/ui/Fields"; // Asumiendo que usas tus componentes UI
 
 type Props = {
   tasaEfectivaAnual: number;
@@ -10,238 +19,281 @@ type Props = {
   cupoTotal: number;
 };
 
-type SimForm = {
-  monto: number;
-  pagoMensual: number;
-  abonoExtra: number;
-  plazoMax: number;
-  tasa: number;
-};
-
 type ScheduleRow = {
   mes: number;
   saldo: number;
-  interes: number;
-  pagoTotal: number;
-  abonoCapital: number;
+  interesPagado: number;
+  capitalPagado: number;
+  cuota: number;
 };
 
-function BalanceChart({ values }: { values: number[] }) {
-  if (values.length === 0) return null;
-  const max = Math.max(...values, 1);
-  const points = values.map((v, idx) => {
-    const x = (idx / Math.max(values.length - 1, 1)) * 100;
-    const y = 100 - (v / max) * 100;
-    return { x, y };
-  });
-
-  const areaPoints = [
-    `${points[0].x},100`,
-    ...points.map((p) => `${p.x},${p.y}`),
-    `${points[points.length - 1].x},100`,
-  ].join(" ");
+// ============================================================================
+// COMPONENTE: MINI GRÁFICO DE BARRAS APILADAS (CAPITAL VS INTERÉS)
+// ============================================================================
+function StackedBarChart({ capital, interes }: { capital: number; interes: number }) {
+  const total = capital + interes;
+  const pctCapital = (capital / total) * 100;
+  const pctInteres = (interes / total) * 100;
 
   return (
-    <svg viewBox="0 0 100 100" className="h-32 w-full overflow-visible">
-      <defs>
-        <linearGradient id="saldoGradient" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polyline
-        fill="url(#saldoGradient)"
-        stroke="none"
-        points={areaPoints}
-      />
-      <polyline
-        points={points.map((p) => `${p.x},${p.y}`).join(" ")}
-        fill="none"
-        stroke="#0ea5e9"
-        strokeWidth={2.5}
-        strokeLinejoin="round"
-      />
-    </svg>
+    <div className="w-full space-y-2">
+      <div className="flex h-4 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-zinc-800">
+        <div 
+            className="h-full bg-emerald-500 transition-all duration-500" 
+            style={{ width: `${pctCapital}%` }} 
+        />
+        <div 
+            className="h-full bg-rose-500 transition-all duration-500" 
+            style={{ width: `${pctInteres}%` }} 
+        />
+      </div>
+      <div className="flex justify-between text-xs font-medium">
+        <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+           <div className="h-2 w-2 rounded-full bg-emerald-500" /> Capital ({pctCapital.toFixed(0)}%)
+        </span>
+        <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400">
+           <div className="h-2 w-2 rounded-full bg-rose-500" /> Intereses ({pctInteres.toFixed(0)}%)
+        </span>
+      </div>
+    </div>
   );
 }
 
 export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual, cupoTotal }: Props) {
-  const [form, setForm] = useState<SimForm>({
-    monto: Math.max(saldoActual, 0),
-    pagoMensual: Math.max(Math.round(saldoActual / 12), 1),
-    abonoExtra: 0,
-    plazoMax: 36,
-    tasa: tasaEfectivaAnual,
-  });
+  // 1. ESTADO DEL FORMULARIO
+  // Inicializamos con el saldo actual de la tarjeta
+  const [monto, setMonto] = useState(saldoActual);
+  const [cuotaMensual, setCuotaMensual] = useState(0);
+  const [tasaEA, setTasaEA] = useState(tasaEfectivaAnual);
 
-  const monthlyRate = useMemo(() => {
-    const t = Number(form.tasa);
-    if (!t || t <= 0) return 0;
-    return Math.pow(1 + t / 100, 1 / 12) - 1;
-  }, [form.tasa]);
+  // Calcular Tasa Mensual (TEM) desde la Anual (TEA)
+  // Fórmula: (1 + TEA)^(1/12) - 1
+  const tasaMensual = useMemo(() => {
+    return Math.pow(1 + (tasaEA / 100), 1 / 12) - 1;
+  }, [tasaEA]);
 
-  const schedule = useMemo(() => {
-    let saldo = Math.max(0, Number(form.monto));
-    const rows: ScheduleRow[] = [];
-    let totalInteres = 0;
-    let mes = 1;
-    let stuck = false;
+  // Pago Mínimo Sugerido (Intuitivo: Intereses + 1.5% capital aprox) para inicializar
+  useEffect(() => {
+     if (saldoActual > 0 && cuotaMensual === 0) {
+        const minInteres = saldoActual * tasaMensual;
+        const minCapital = saldoActual * 0.015; // Asumimos abono del 1.5%
+        setCuotaMensual(Math.ceil(minInteres + minCapital));
+     }
+  }, [saldoActual, tasaMensual]);
 
-    const maxMonths = Math.max(1, form.plazoMax);
-    while (saldo > 0 && mes <= maxMonths) {
-      const interes = saldo * monthlyRate;
-      const pagoCapital = Math.max(form.pagoMensual - interes, 0);
-      const extra = Math.max(form.abonoExtra, 0);
-      const abonoCapital = pagoCapital + extra;
-      const pagoTotal = abonoCapital + interes;
-      totalInteres += interes;
+  // 2. MOTOR DE SIMULACIÓN (AMORTIZACIÓN)
+  const simulacion = useMemo(() => {
+    if (monto <= 0 || cuotaMensual <= 0) return null;
 
-      saldo = Math.max(saldo + interes - (form.pagoMensual + extra), 0);
-      rows.push({ mes, saldo, interes, pagoTotal, abonoCapital });
+    let saldo = monto;
+    let totalIntereses = 0;
+    let meses = 0;
+    const historial: ScheduleRow[] = [];
+    let esInfinito = false;
 
-      if (form.pagoMensual + extra <= interes + 1e-2 && monthlyRate > 0) {
-        stuck = true;
-        break;
-      }
-      mes += 1;
+    // Límite de seguridad de 360 meses (30 años) para evitar loops infinitos
+    while (saldo > 0 && meses < 360) {
+        const interesMes = saldo * tasaMensual;
+        
+        // Si la cuota no cubre ni los intereses, la deuda crece infinitamente
+        if (cuotaMensual <= interesMes) {
+            esInfinito = true;
+            break;
+        }
+
+        const capitalMes = cuotaMensual - interesMes;
+        let pagoReal = cuotaMensual;
+
+        // Ajuste último mes
+        if (saldo < capitalMes) {
+            pagoReal = saldo + interesMes;
+            saldo = 0;
+        } else {
+            saldo -= capitalMes;
+        }
+
+        totalIntereses += interesMes;
+        meses++;
+        
+        historial.push({
+            mes: meses,
+            saldo: Math.max(0, saldo),
+            interesPagado: interesMes,
+            capitalPagado: pagoReal - interesMes,
+            cuota: pagoReal
+        });
     }
 
+    const totalPagado = monto + totalIntereses;
+    const costoPorCadaDolar = totalPagado / monto;
+
     return {
-      rows,
-      totalInteres,
-      totalPagado: rows.reduce((acc, r) => acc + r.pagoTotal, 0),
-      saldoRestante: saldo,
-      stuck,
+        meses,
+        totalIntereses,
+        totalPagado,
+        historial,
+        esInfinito,
+        costoPorCadaDolar
     };
-  }, [form.abonoExtra, form.monto, form.pagoMensual, form.plazoMax, monthlyRate]);
 
-  const valoresGrafico = useMemo(() => {
-    if (schedule.rows.length === 0) return [form.monto];
-    return [form.monto, ...schedule.rows.map((r) => r.saldo)];
-  }, [form.monto, schedule.rows]);
+  }, [monto, cuotaMensual, tasaMensual]);
 
-  const mesesProyectados = schedule.rows.length;
-  const tem = monthlyRate * 100;
+  // 3. RENDERIZADO
+  if (!simulacion) return null;
 
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow dark:border-white/10 dark:bg-black/30">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-sky-500">Simulador</p>
-          <h3 className="text-xl font-semibold">Credito con esta tarjeta</h3>
-          <p className="text-sm text-slate-600 dark:text-zinc-400">
-            Calcula intereses compuestos y el tiempo estimado para pagar usando la TEA de la tarjeta.
-          </p>
-        </div>
-        <div className="text-right text-xs text-slate-500">
-          <p>TEA: {tasaEfectivaAnual}%</p>
-          <p>TEM aprox: {tem.toFixed(2)}%</p>
-        </div>
-      </div>
-
-      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200/70 bg-slate-50/70 p-4 text-sm dark:border-white/10 dark:bg-white/5">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-xs text-slate-500">Monto a financiar</span>
-              <input
-                type="number"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                value={form.monto}
-                onChange={(e) => setForm((f) => ({ ...f, monto: Math.max(0, Number(e.target.value)) }))}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-slate-500">Pago mensual</span>
-              <input
-                type="number"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                value={form.pagoMensual}
-                onChange={(e) => setForm((f) => ({ ...f, pagoMensual: Math.max(0, Number(e.target.value)) }))}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-slate-500">Abono extra mensual</span>
-              <input
-                type="number"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                value={form.abonoExtra}
-                onChange={(e) => setForm((f) => ({ ...f, abonoExtra: Math.max(0, Number(e.target.value)) }))}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-slate-500">Plazo max (meses)</span>
-              <input
-                type="number"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                value={form.plazoMax}
-                onChange={(e) => setForm((f) => ({ ...f, plazoMax: Math.max(1, Number(e.target.value)) }))}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-slate-500">TEA personalizada (%)</span>
-              <input
-                type="number"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:border-white/10 dark:bg-black/30 dark:text-white"
-                value={form.tasa}
-                onChange={(e) => setForm((f) => ({ ...f, tasa: Math.max(0, Number(e.target.value)) }))}
-              />
-              <p className="text-[11px] text-slate-500">Usa la TEA del banco o ajusta para escenarios.</p>
-            </label>
-          </div>
-          <p className="mt-3 text-xs text-slate-500">
-            Cupo disponible: {formatMoney(Math.max(cupoTotal - saldoActual, 0), moneda)}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-200/70 bg-white p-4 shadow-inner dark:border-white/10 dark:bg-black/20">
-          <div className="flex items-center justify-between text-sm">
-            <div>
-              <p className="text-xs text-slate-500">Tiempo estimado</p>
-              <p className="text-lg font-semibold">{mesesProyectados} meses</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">Intereses proyectados</p>
-              <p className="text-lg font-semibold">{formatMoney(schedule.totalInteres, moneda)}</p>
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-900">
+      
+      {/* HEADER: TITULO Y RESUMEN RÁPIDO */}
+      <div className="bg-slate-50 p-6 dark:bg-white/5">
+         <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3 text-sky-600 dark:text-sky-400">
+                <div className="rounded-full bg-sky-100 p-2 dark:bg-sky-500/20">
+                    <Calculator size={24} />
+                </div>
+                <div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Simulador de Deuda</h3>
+                    <p className="text-xs font-medium opacity-80">Proyección inteligente de pagos</p>
+                </div>
             </div>
             <div className="text-right">
-              <p className="text-xs text-slate-500">Total pagado</p>
-              <p className="text-lg font-semibold">{formatMoney(schedule.totalPagado, moneda)}</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Tasa Efectiva Anual</p>
+                <p className="text-2xl font-bold text-slate-700 dark:text-white">{tasaEA}%</p>
             </div>
-          </div>
-          <BalanceChart values={valoresGrafico} />
-          {schedule.stuck && (
-            <p className="text-xs text-amber-600">
-              El pago mensual es menor al interes generado; aumenta el pago o abono extra para reducir saldo.
-            </p>
-          )}
-        </div>
+         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <div className="rounded-xl border border-slate-200/70 bg-white p-4 text-sm shadow dark:border-white/10 dark:bg-black/20">
-          <p className="text-xs text-slate-500">Primer mes</p>
-          <p className="text-lg font-semibold">{formatMoney(schedule.rows[0]?.pagoTotal ?? 0, moneda)}</p>
-          <p className="text-xs text-slate-500">Pago total (capital + interes)</p>
-        </div>
-        <div className="rounded-xl border border-slate-200/70 bg-white p-4 text-sm shadow dark:border-white/10 dark:bg-black/20">
-          <p className="text-xs text-slate-500">Saldo esperado mes 6</p>
-          <p className="text-lg font-semibold">
-            {formatMoney(
-              schedule.rows[5]?.saldo ??
-                (schedule.rows.length > 0
-                  ? schedule.rows[schedule.rows.length - 1].saldo
-                  : 0),
-              moneda,
-            )}
-          </p>
-          <p className="text-xs text-slate-500">Seguimiento al semestre</p>
-        </div>
-        <div className="rounded-xl border border-slate-200/70 bg-white p-4 text-sm shadow dark:border-white/10 dark:bg-black/20">
-          <p className="text-xs text-slate-500">Saldo final proyectado</p>
-          <p className="text-lg font-semibold">{formatMoney(schedule.saldoRestante, moneda)}</p>
-          <p className="text-xs text-slate-500">Con los parametros actuales</p>
-        </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12">
+          
+          {/* COLUMNA IZQUIERDA: CONTROLES */}
+          <div className="border-r border-slate-100 p-6 dark:border-white/5 lg:col-span-5 space-y-6">
+              
+              <div className="space-y-4">
+                  <NumberField 
+                      label="Monto de la Deuda" 
+                      value={monto} 
+                      onChange={(v) => setMonto(Number(v))} 
+                      isCurrency 
+                      currency={moneda} 
+                  />
+                  
+                  <div>
+                    <div className="flex justify-between mb-1">
+                        <label className="text-xs font-bold uppercase text-slate-500">Tu Cuota Mensual</label>
+                        <span className="text-xs font-bold text-sky-600">{formatMoney(cuotaMensual, moneda)}</span>
+                    </div>
+                    {/* SLIDER INTERACTIVO */}
+                    <input 
+                        type="range" 
+                        min={monto * 0.01} // Min 1%
+                        max={monto * 0.5}  // Max 50%
+                        step={1000}
+                        value={cuotaMensual}
+                        onChange={(e) => setCuotaMensual(Number(e.target.value))}
+                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-600"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1 flex justify-between">
+                        <span>Min: {formatMoney(monto*0.01, moneda)}</span>
+                        <span>Max: {formatMoney(monto*0.5, moneda)}</span>
+                    </p>
+                  </div>
+
+                  <NumberField 
+                      label="Cuota Mensual Exacta" 
+                      value={cuotaMensual} 
+                      onChange={(v) => setCuotaMensual(Number(v))} 
+                      isCurrency 
+                      currency={moneda} 
+                  />
+              </div>
+
+              {simulacion.esInfinito ? (
+                  <div className="rounded-xl bg-rose-50 p-4 border border-rose-200 text-rose-800 dark:bg-rose-900/20 dark:border-rose-800 dark:text-rose-300">
+                      <div className="flex items-center gap-2 font-bold mb-1">
+                          <AlertTriangle size={18} />
+                          <span>¡Peligro Financiero!</span>
+                      </div>
+                      <p className="text-xs leading-relaxed">
+                          Tu cuota actual ({formatMoney(cuotaMensual, moneda)}) no cubre los intereses mensuales. 
+                          <br/><br/>
+                          Tu deuda <strong>nunca bajará</strong>, solo crecerá infinitamente. Aumenta la cuota inmediatamente.
+                      </p>
+                  </div>
+              ) : (
+                  <div className="rounded-xl bg-indigo-50 p-4 border border-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:border-indigo-800 dark:text-indigo-200">
+                      <div className="flex items-center gap-2 font-bold mb-1 text-sm">
+                          <PiggyBank size={16} />
+                          <span>Consejo Financiero</span>
+                      </div>
+                      <p className="text-xs opacity-80">
+                         Si aumentas tu cuota en <strong>{formatMoney(cuotaMensual * 0.2, moneda)}</strong>, 
+                         terminarías de pagar <strong>{Math.ceil(simulacion.meses * 0.2)} meses antes</strong>.
+                      </p>
+                  </div>
+              )}
+          </div>
+
+          {/* COLUMNA DERECHA: RESULTADOS VISUALES */}
+          <div className="p-6 lg:col-span-7 bg-slate-50/50 dark:bg-black/20">
+              
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm dark:bg-white/5 dark:border-white/5">
+                      <div className="flex items-center gap-2 text-slate-400 mb-1">
+                          <Clock size={16} />
+                          <span className="text-xs font-bold uppercase">Tiempo Total</span>
+                      </div>
+                      <p className="text-2xl font-bold text-slate-800 dark:text-white">
+                          {Math.floor(simulacion.meses / 12) > 0 && <span className="text-lg">{Math.floor(simulacion.meses / 12)} años </span>}
+                          {simulacion.meses % 12} meses
+                      </p>
+                  </div>
+                  
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm dark:bg-white/5 dark:border-white/5">
+                      <div className="flex items-center gap-2 text-rose-400 mb-1">
+                          <TrendingDown size={16} />
+                          <span className="text-xs font-bold uppercase">Intereses Totales</span>
+                      </div>
+                      <p className="text-2xl font-bold text-rose-600">
+                          {formatMoney(simulacion.totalIntereses, moneda)}
+                      </p>
+                  </div>
+              </div>
+
+              {/* VISUALIZACIÓN DE COSTO */}
+              <div className="mb-6 space-y-2">
+                  <p className="text-xs font-bold uppercase text-slate-500">Distribución de tus pagos</p>
+                  <StackedBarChart capital={monto} interes={simulacion.totalIntereses} />
+              </div>
+
+              {/* TABLA DE AMORTIZACIÓN RESUMIDA */}
+              <div className="rounded-xl border border-slate-200 bg-white overflow-hidden dark:border-white/10 dark:bg-zinc-900">
+                  <div className="flex justify-between p-3 bg-slate-100 text-xs font-bold text-slate-500 dark:bg-white/5">
+                      <span>Proyección</span>
+                      <span>Saldo Restante</span>
+                  </div>
+                  <div className="divide-y divide-slate-100 dark:divide-white/5">
+                      {[
+                          simulacion.historial[Math.floor(simulacion.meses * 0.25)], 
+                          simulacion.historial[Math.floor(simulacion.meses * 0.5)], 
+                          simulacion.historial[Math.floor(simulacion.meses * 0.75)]
+                      ].filter(Boolean).map((h, i) => (
+                          <div key={i} className="flex justify-between p-3 text-sm">
+                              <span className="text-slate-500">Mes {h.mes}</span>
+                              <span className="font-mono font-medium">{formatMoney(h.saldo, moneda)}</span>
+                          </div>
+                      ))}
+                       <div className="flex justify-between p-3 text-sm bg-emerald-50/50 dark:bg-emerald-900/10">
+                              <span className="text-emerald-600 font-bold">Mes {simulacion.meses} (Final)</span>
+                              <span className="font-mono font-bold text-emerald-600">{formatMoney(0, moneda)}</span>
+                       </div>
+                  </div>
+              </div>
+
+              <p className="text-[10px] text-slate-400 mt-4 text-center">
+                  * Proyección estimada basada en una tasa fija constante. El costo real por cada {formatMoney(1, moneda)} prestado será de {formatMoney(simulacion.costoPorCadaDolar, moneda)}.
+              </p>
+
+          </div>
       </div>
     </div>
   );
