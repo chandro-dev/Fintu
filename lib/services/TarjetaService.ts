@@ -26,7 +26,7 @@ export type TarjetaPayload = {
   diaCorte: number;
   diaPago: number;
   pagoMinimoPct?: number | null;
-  estado?: "ACTIVA" | "BLOQUEADA" | "CANCELADA";
+  estado?: "ACTIVA" | "BLOQUEADA" | "CERRADA";
   cerradaEn?: Date | string | null;
 };
 

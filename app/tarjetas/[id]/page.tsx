@@ -11,12 +11,12 @@ import type { TarjetaMovimientoUI } from "@/components/transactions/types";
 import { InstallmentsTab, CompraDiferida } from "@/components/tarjetas/InstallmentsTab";
 
 // Componentes UI Reutilizables
-import { InputField, SelectField, NumberField } from "@/components/ui/Fields";
+import { InputField, SelectField, NumberField, MoneyField } from "@/components/ui/Fields";
 
 // Iconos
 import { 
   CreditCard, Calendar, AlertCircle, Trash2, Edit3, 
-  Plus, ChevronLeft, Wallet, Layers
+  Plus, ChevronLeft, Wallet, RefreshCw
 } from "lucide-react";
 
 // ============================================================================
@@ -33,8 +33,8 @@ type TarjetaDetalle = {
   diaCorte: number;
   diaPago: number;
   pagoMinimoPct?: number | null;
-  estado?: string;
-  cuentaId: string; // ID de la cuenta "sombra" asociada
+  estado?: "ACTIVA" | "CERRADA";
+  cuentaId: string;
 };
 
 type MovimientoTipo = "COMPRA" | "PAGO" | "INTERES" | "CUOTA" | "AJUSTE";
@@ -60,17 +60,24 @@ const MOV_TIPO_LABEL: Record<string, string> = {
 // ============================================================================
 function VisualCreditCard({ tarjeta, utilizado, disponible }: { tarjeta: TarjetaDetalle, utilizado: number, disponible: number }) {
   const usagePct = Math.min((utilizado / tarjeta.cupoTotal) * 100, 100);
+  const isCancelled = tarjeta.estado === "CERRADA";
   
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-black p-6 text-white shadow-2xl transition-transform hover:scale-[1.01]">
+    <div className={`relative overflow-hidden rounded-2xl p-6 text-white shadow-2xl transition-transform hover:scale-[1.01] ${isCancelled ? "bg-slate-800 grayscale" : "bg-gradient-to-br from-slate-800 via-slate-900 to-black"}`}>
       {/* Background Decorativo */}
-      <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-sky-500/20 blur-3xl"></div>
-      <div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-indigo-500/20 blur-3xl"></div>
+      {!isCancelled && (
+        <>
+          <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-sky-500/20 blur-3xl"></div>
+          <div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-indigo-500/20 blur-3xl"></div>
+        </>
+      )}
 
       <div className="relative z-10 flex flex-col justify-between h-full min-h-[180px]">
         <div className="flex justify-between items-start">
            <div>
-             <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">{tarjeta.emisor || "CREDIT CARD"}</p>
+             <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">
+                {isCancelled ? "CANCELADA" : (tarjeta.emisor || "CREDIT CARD")}
+             </p>
              <h2 className="text-2xl font-bold mt-1 tracking-wide">{tarjeta.nombre}</h2>
            </div>
            <CreditCard size={32} className="text-white/80" />
@@ -112,6 +119,10 @@ export default function TarjetaDetallePage() {
   
   const { session, cuentas } = useAppData(); 
   const accessToken = session?.access_token;
+  const cuentasActivas = useMemo(
+    () => cuentas.filter((c) => !c.cerradaEn),
+    [cuentas]
+  );
 
   // Estados de Datos
   const [tarjeta, setTarjeta] = useState<TarjetaDetalle | null>(null);
@@ -264,8 +275,37 @@ export default function TarjetaDetallePage() {
     }
   };
 
+  // NUEVO HANDLER: Toggle Estado (Archivar / Reactivar)
+  const handleToggleEstado = async () => {
+      if (!accessToken || !tarjeta) return;
+      
+      const nuevoEstado = tarjeta.estado === "ACTIVA" ? "CERRADA" : "ACTIVA";
+      const confirmar = confirm(
+          nuevoEstado === "CERRADA" 
+          ? "¿Seguro que deseas archivar esta tarjeta? Se mantendrá el historial pero no podrás agregar nuevas compras."
+          : "¿Deseas reactivar esta tarjeta?"
+      );
+
+      if (!confirmar) return;
+
+      setBusy(true);
+      try {
+          await TarjetaService.actualizar(tarjetaId, {
+              estado: nuevoEstado,
+              cerradaEn: nuevoEstado === "CERRADA" ? new Date().toISOString() : null
+          }, { accessToken });
+          
+          await loadData();
+      } catch (err) {
+          alert("Error al cambiar estado");
+      } finally {
+          setBusy(false);
+      }
+  };
+
+  // ELIMINAR DEFINITIVO (Hard Delete)
   const handleEliminarTarjeta = async () => {
-    if (!accessToken || !confirm("¿Eliminar esta tarjeta y todo su historial?")) return;
+    if (!accessToken || !confirm("¡PELIGRO! ¿Eliminar definitivamente?\n\nSe borrarán TODOS los movimientos, historial de pagos y cuotas asociados. Esta acción no se puede deshacer.")) return;
     setBusy(true);
     try {
       await TarjetaService.eliminar(tarjetaId, { accessToken });
@@ -294,6 +334,17 @@ export default function TarjetaDetallePage() {
 
         {error && <div className="p-4 bg-rose-100 text-rose-800 rounded-xl">{error}</div>}
 
+        {/* ALERTA DE TARJETA CANCELADA */}
+        {tarjeta.estado === "CERRADA" && (
+           <div className="p-4 rounded-xl bg-slate-100 border border-slate-300 text-slate-600 flex items-center gap-3 dark:bg-zinc-900 dark:border-white/10 dark:text-zinc-400">
+               <Trash2 size={20} />
+               <div>
+                   <p className="font-bold">Tarjeta Archivada</p>
+                   <p className="text-xs">Esta tarjeta es de solo lectura. Reactívala para registrar nuevos movimientos.</p>
+               </div>
+           </div>
+        )}
+
         {/* LAYOUT SUPERIOR: TARJETA + SIMULADOR */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-6">
@@ -312,22 +363,40 @@ export default function TarjetaDetallePage() {
                     saldoActual={utilizado}
                     cupoTotal={tarjeta.cupoTotal}
                 />
+                
+                {/* BOTONERA DE ACCIONES */}
                 <div className="grid grid-cols-2 gap-3 mt-auto">
-                    <button 
-                        onClick={() => {
-                            setMovForm(prev => ({ ...prev, tipo: "COMPRA", monto: "", descripcion: "", cuotaId: "" }));
-                            setShowMovModal(true);
-                        }}
-                        className="col-span-2 flex items-center justify-center gap-2 py-3 rounded-xl bg-sky-600 text-white font-bold shadow-lg shadow-sky-900/20 hover:bg-sky-500 hover:scale-[1.02] active:scale-95 transition-all"
-                    >
-                        <Plus size={20} /> Registrar Movimiento
-                    </button>
-                    <button onClick={() => setShowEditModal(true)} className="flex items-center justify-center gap-2 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5 transition-all font-medium">
-                        <Edit3 size={18} /> Editar
-                    </button>
-                    <button onClick={handleEliminarTarjeta} className="flex items-center justify-center gap-2 py-3 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900/30 dark:hover:bg-rose-900/20 transition-all font-medium">
-                        <Trash2 size={18} />
-                    </button>
+                    {tarjeta.estado !== "CERRADA" ? (
+                        <>
+                            <button 
+                                onClick={() => {
+                                    setMovForm(prev => ({ ...prev, tipo: "COMPRA", monto: "", descripcion: "", cuotaId: "" }));
+                                    setShowMovModal(true);
+                                }}
+                                className="col-span-2 flex items-center justify-center gap-2 py-3 rounded-xl bg-sky-600 text-white font-bold shadow-lg shadow-sky-900/20 hover:bg-sky-500 hover:scale-[1.02] active:scale-95 transition-all"
+                            >
+                                <Plus size={20} /> Registrar Movimiento
+                            </button>
+                            <button onClick={() => setShowEditModal(true)} className="flex items-center justify-center gap-2 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5 transition-all font-medium">
+                                <Edit3 size={18} /> Editar
+                            </button>
+                            {/* BOTÓN ARCHIVAR */}
+                            <button onClick={handleToggleEstado} className="flex items-center justify-center gap-2 py-3 rounded-xl border border-orange-200 text-orange-600 hover:bg-orange-50 dark:border-orange-900/30 dark:hover:bg-orange-900/20 transition-all font-medium">
+                                <Trash2 size={18} /> Archivar
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            {/* BOTÓN REACTIVAR */}
+                            <button onClick={handleToggleEstado} className="col-span-2 flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-700 transition-all">
+                                <RefreshCw size={20} /> Reactivar Tarjeta
+                            </button>
+                            {/* BOTÓN ELIMINAR (Solo visible en archivadas) */}
+                            <button onClick={handleEliminarTarjeta} className="col-span-2 py-2 text-xs text-rose-500 hover:underline">
+                                Eliminar definitivamente (Borrar historial)
+                            </button>
+                        </>
+                    )}
                 </div>
             </div>
         </div>
@@ -427,12 +496,21 @@ export default function TarjetaDetallePage() {
                         options={MOV_TIPO_OPTIONS}
                         disabled={movForm.tipo === "CUOTA"} // Bloquear si viene de la pestaña cuotas
                     />
-                    <NumberField 
-                        label="Monto" 
-                        value={movForm.monto} 
-                        onChange={(v) => setMovForm(p => ({...p, monto: v}))} 
-                        isCurrency currency={tarjeta.moneda}
-                    />
+                    
+                    <div className="flex flex-col">
+                        <MoneyField
+                            label="Monto"
+                            value={movForm.monto}
+                            onChange={(v) => setMovForm(p => ({...p, monto: v}))}
+                            currency={tarjeta.moneda}
+                        />
+                        {/* HINT DE ABONO A CAPITAL */}
+                        {movForm.tipo === "CUOTA" && (
+                            <p className="text-[10px] text-sky-600 dark:text-sky-400 mt-1 px-1 leading-tight">
+                                💡 Puedes pagar más de lo sugerido. El excedente se aplicará como <b>Abono a Capital</b>.
+                            </p>
+                        )}
+                    </div>
                  </div>
 
                  <InputField 
@@ -477,7 +555,7 @@ export default function TarjetaDetallePage() {
                             placeholder="Selecciona cuenta..."
                             value={movForm.cuentaOrigenId}
                             onChange={(v) => setMovForm(p => ({...p, cuentaOrigenId: v}))}
-                            options={cuentas.map(c => ({ 
+                            options={cuentasActivas.map(c => ({ 
                                 label: `${c.nombre} (Saldo: ${formatMoney(Number(c.saldo), c.moneda)})`, 
                                 value: c.id 
                             }))}
@@ -504,19 +582,58 @@ export default function TarjetaDetallePage() {
                  <h3 className="text-xl font-bold dark:text-white">Configuración de Tarjeta</h3>
                  <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full">✕</button>
              </div>
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <InputField 
+        label="Nombre" 
+        value={editForm.nombre} 
+        onChange={(v) => setEditForm((p:any) => ({...p, nombre: v}))} 
+    />
+    <InputField 
+        label="Emisor" 
+        value={editForm.emisor} 
+        onChange={(v) => setEditForm((p:any) => ({...p, emisor: v}))} 
+    />
+    
+    {/* Usamos MoneyField para mejor UX en montos */}
+    <MoneyField 
+        label="Cupo Total" 
+        value={editForm.cupoTotal} 
+        onChange={(v) => setEditForm((p:any) => ({...p, cupoTotal: Number(v)}))} 
+        currency={tarjeta.moneda}
+    />
+    <MoneyField 
+        label="Saldo Actual (Deuda)" 
+        value={editForm.saldoActual} 
+        onChange={(v) => setEditForm((p:any) => ({...p, saldoActual: Number(v)}))} 
+        currency={tarjeta.moneda}
+    />
+    
+    {/* Tasas y Porcentajes */}
+    <NumberField 
+        label="Tasa E.A. (%)" 
+        value={editForm.tasaEfectivaAnual} 
+        onChange={(v) => setEditForm((p:any) => ({...p, tasaEfectivaAnual: Number(v)}))} 
+    />
+    <NumberField 
+        label="% Pago Mínimo" 
+        value={editForm.pagoMinimoPct} 
+        onChange={(v) => setEditForm((p:any) => ({...p, pagoMinimoPct: Number(v)}))} 
+    />
 
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <InputField label="Nombre" value={editForm.nombre} onChange={(v) => setEditForm((p:any) => ({...p, nombre: v}))} />
-                 <InputField label="Emisor" value={editForm.emisor} onChange={(v) => setEditForm((p:any) => ({...p, emisor: v}))} />
-                 
-                 <NumberField label="Cupo Total" value={editForm.cupoTotal} onChange={(v) => setEditForm((p:any) => ({...p, cupoTotal: Number(v)}))} isCurrency />
-                 <NumberField label="Saldo Actual (Deuda)" value={editForm.saldoActual} onChange={(v) => setEditForm((p:any) => ({...p, saldoActual: Number(v)}))} isCurrency />
-                 
-                 <NumberField label="Tasa E.A. (%)" value={editForm.tasaEfectivaAnual} onChange={(v) => setEditForm((p:any) => ({...p, tasaEfectivaAnual: Number(v)}))} />
-                 <NumberField label="Día Corte" value={editForm.diaCorte} onChange={(v) => setEditForm((p:any) => ({...p, diaCorte: Number(v)}))} />
-                 <NumberField label="Día Pago" value={editForm.diaPago} onChange={(v) => setEditForm((p:any) => ({...p, diaPago: Number(v)}))} />
-                 <NumberField label="% Pago Mínimo" value={editForm.pagoMinimoPct} onChange={(v) => setEditForm((p:any) => ({...p, pagoMinimoPct: Number(v)}))} />
-             </div>
+    {/* Fechas (Enteros) */}
+    <NumberField 
+        label="Día Corte" 
+        value={editForm.diaCorte} 
+        onChange={(v) => setEditForm((p:any) => ({...p, diaCorte: Number(v)}))} 
+        placeholder="1-31"
+    />
+    <NumberField 
+        label="Día Pago" 
+        value={editForm.diaPago} 
+        onChange={(v) => setEditForm((p:any) => ({...p, diaPago: Number(v)}))} 
+        placeholder="1-31"
+    />
+</div>
 
              <div className="flex justify-end gap-3 mt-8">
                  <button onClick={() => setShowEditModal(false)} className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-800">Cancelar</button>

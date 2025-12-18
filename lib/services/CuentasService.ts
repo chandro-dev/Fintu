@@ -8,6 +8,7 @@ type CuentaPayload = {
   nombre?: string;
   tipoCuentaId?: string;
   moneda?: string;
+  saldo?: number;
   institucion?: string | null;
   limiteCredito?: number | null;
   tasaApr?: number | null;
@@ -16,6 +17,7 @@ type CuentaPayload = {
   plazoMeses?: number | null;
   ajusteSaldo?: number;
   ajusteDescripcion?: string;
+  cerradaEn?: string | null;
 };
 
 export class CuentasService {
@@ -56,9 +58,7 @@ export class CuentasService {
     return res.json().catch(() => null);
   }
 
-  static async actualizar(id: string, payload: CuentaPayload, opts: FetchOptions) {
-    const err = this.validate(payload);
-    if (err) throw new Error(err);
+  static async actualizar(id: string, payload: Partial<CuentaPayload>, opts: FetchOptions) {
     const res = await fetch("/api/accounts", {
       method: "PATCH",
       headers: this.headers(opts),

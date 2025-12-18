@@ -80,9 +80,11 @@ export function TransactionForm({
     onChange({ monto: numericValue });
   };
 
-  const cuentasOrigenOptions = cuentas.map((c) => ({ label: c.nombre, value: c.id }));
+  const cuentasOrigenOptions = cuentas
+    .filter((c) => !c.cerradaEn || c.id === form.cuentaId)
+    .map((c) => ({ label: c.nombre, value: c.id }));
   const cuentasDestinoOptions = cuentas
-    .filter((c) => c.id !== form.cuentaId)
+    .filter((c) => c.id !== form.cuentaId && (!c.cerradaEn || c.id === form.cuentaDestinoId))
     .map((c) => ({ label: c.nombre, value: c.id }));
 
   const categoriasOptions = [

@@ -10,7 +10,7 @@ import {
   Clock, 
   DollarSign 
 } from "lucide-react";
-import { NumberField } from "@/components/ui/Fields"; // Asumiendo que usas tus componentes UI
+import { MoneyField } from "@/components/ui/Fields";
 
 type Props = {
   tasaEfectivaAnual: number;
@@ -169,12 +169,11 @@ export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual
           <div className="border-r border-slate-100 p-6 dark:border-white/5 lg:col-span-5 space-y-6">
               
               <div className="space-y-4">
-                  <NumberField 
-                      label="Monto de la Deuda" 
-                      value={monto} 
-                      onChange={(v) => setMonto(Number(v))} 
-                      isCurrency 
-                      currency={moneda} 
+                  <MoneyField
+                      label="Monto de la Deuda"
+                      value={monto}
+                      onChange={(v) => setMonto(Number(v))}
+                      currency={moneda}
                   />
                   
                   <div>
@@ -198,12 +197,11 @@ export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual
                     </p>
                   </div>
 
-                  <NumberField 
-                      label="Cuota Mensual Exacta" 
-                      value={cuotaMensual} 
-                      onChange={(v) => setCuotaMensual(Number(v))} 
-                      isCurrency 
-                      currency={moneda} 
+                  <MoneyField
+                      label="Cuota Mensual Exacta"
+                      value={cuotaMensual}
+                      onChange={(v) => setCuotaMensual(Number(v))}
+                      currency={moneda}
                   />
               </div>
 

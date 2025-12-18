@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/supabaseAdmin";
 import { getTipoTransaccionId } from "@/lib/tipoTransaccion";
@@ -10,6 +11,63 @@ const limpiarCategoriaId = (id: any) => {
   if (!id || id === "") return null;
   return id;
 };
+
+async function cleanupTarjetaMovimiento(
+  tx: Prisma.TransactionClient,
+  transaccionId: string
+) {
+  const movimiento = await tx.tarjetaMovimiento.findFirst({
+    where: { transaccionId },
+    include: { tarjeta: { select: { id: true, cuentaId: true } } },
+  });
+  if (!movimiento) return false;
+
+  const monto = Number(movimiento.monto);
+  let delta = -monto;
+  if (movimiento.tipo === "PAGO" || movimiento.tipo === "CUOTA") {
+    delta = monto;
+  } else if (movimiento.tipo === "AJUSTE") {
+    delta = -monto;
+  }
+
+  await tx.tarjetaMovimiento.delete({ where: { id: movimiento.id } });
+
+  await tx.tarjetaCredito.update({
+    where: { id: movimiento.tarjetaId },
+    data: { saldoActual: { increment: delta } },
+  });
+  await tx.cuenta.update({
+    where: { id: movimiento.tarjeta.cuentaId },
+    data: { saldo: { increment: delta } },
+  });
+
+  if (movimiento.tipo === "COMPRA") {
+    if (movimiento.cuotaId) {
+      await tx.tarjetaCuota
+        .deleteMany({ where: { id: movimiento.cuotaId } })
+        .catch(() => null);
+    }
+    if (movimiento.compraId) {
+      await tx.tarjetaCompra
+        .deleteMany({ where: { id: movimiento.compraId } })
+        .catch(() => null);
+    }
+  }
+
+  if (
+    (movimiento.tipo === "PAGO" || movimiento.tipo === "CUOTA") &&
+    movimiento.compraId
+  ) {
+    await tx.tarjetaCompra
+      .update({
+        where: { id: movimiento.compraId },
+        data: { saldoPendiente: { increment: monto } },
+      })
+      .catch(() => null);
+  }
+
+  return true;
+}
 
 // GET /api/transactions
 export async function GET(request: Request) {
@@ -276,21 +334,41 @@ export async function DELETE(request: Request) {
         const delta1 = existing.direccion === "ENTRADA" ? -Number(existing.monto) : Number(existing.monto);
         const delta2 = pareja.direccion === "ENTRADA" ? -Number(pareja.monto) : Number(pareja.monto);
 
-        await prisma.$transaction([
-          prisma.transaccion.delete({ where: { id: existing.id } }),
-          prisma.transaccion.delete({ where: { id: pareja.id } }),
-          prisma.cuenta.update({ where: { id: existing.cuentaId }, data: { saldo: { increment: delta1 } } }),
-          prisma.cuenta.update({ where: { id: pareja.cuentaId }, data: { saldo: { increment: delta2 } } })
-        ]);
+        await prisma.$transaction(async (tx) => {
+          const handled1 = await cleanupTarjetaMovimiento(tx, existing.id);
+          const handled2 = await cleanupTarjetaMovimiento(tx, pareja.id);
+
+          await tx.transaccion.delete({ where: { id: existing.id } });
+          await tx.transaccion.delete({ where: { id: pareja.id } });
+
+          if (!handled1) {
+            await tx.cuenta.update({
+              where: { id: existing.cuentaId },
+              data: { saldo: { increment: delta1 } },
+            });
+          }
+          if (!handled2) {
+            await tx.cuenta.update({
+              where: { id: pareja.cuentaId },
+              data: { saldo: { increment: delta2 } },
+            });
+          }
+        });
         return NextResponse.json({ ok: true });
       }
     }
 
     const delta = existing.direccion === "ENTRADA" ? -Number(existing.monto) : Number(existing.monto);
-    await prisma.$transaction([
-      prisma.transaccion.delete({ where: { id } }),
-      prisma.cuenta.update({ where: { id: existing.cuentaId }, data: { saldo: { increment: delta } } })
-    ]);
+    await prisma.$transaction(async (tx) => {
+      const handled = await cleanupTarjetaMovimiento(tx, existing.id);
+      await tx.transaccion.delete({ where: { id } });
+      if (!handled) {
+        await tx.cuenta.update({
+          where: { id: existing.cuentaId },
+          data: { saldo: { increment: delta } },
+        });
+      }
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

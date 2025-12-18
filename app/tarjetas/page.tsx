@@ -7,7 +7,7 @@ import { TarjetaService } from "@/lib/services/TarjetaService";
 import { useAppData } from "@/components/AppDataProvider";
 
 // Componentes UI Reutilizables (Asegúrate de tenerlos en src/components/ui/Fields.tsx)
-import { InputField, NumberField, SelectField } from "@/components/ui/Fields";
+import { InputField, MoneyField, NumberField, SelectField } from "@/components/ui/Fields";
 
 // Iconos
 import { 
@@ -28,6 +28,7 @@ type Tarjeta = {
   tasaEfectivaAnual: number;
   diaCorte: number;
   diaPago: number;
+  estado?: "ACTIVA" | "CERRADA";
 };
 
 // ============================================================================
@@ -38,6 +39,7 @@ function CreditCardMini({ tarjeta }: { tarjeta: Tarjeta }) {
   const cupo = Number(tarjeta.cupoTotal);
   const disponible = Math.max(cupo - utilizado, 0);
   const usagePct = cupo > 0 ? Math.min((utilizado / cupo) * 100, 100) : 0;
+  const isCancelled = tarjeta.estado === "CERRADA";
   
   // Colores dinámicos según uso
   const barColor = usagePct > 90 ? "bg-rose-500" : usagePct > 50 ? "bg-amber-400" : "bg-emerald-400";
@@ -46,7 +48,9 @@ function CreditCardMini({ tarjeta }: { tarjeta: Tarjeta }) {
   return (
     <Link 
       href={`/tarjetas/${tarjeta.id}`}
-      className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br ${cardGradient} p-5 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl`}
+      className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br ${cardGradient} p-5 text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl ${
+        isCancelled ? "opacity-60 grayscale" : ""
+      }`}
     >
       {/* Decoración de Fondo */}
       <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/5 blur-2xl group-hover:bg-white/10"></div>
@@ -74,10 +78,10 @@ function CreditCardMini({ tarjeta }: { tarjeta: Tarjeta }) {
             </div>
          </div>
 
-         {/* Barra de Progreso */}
-         <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-            <div className={`h-full ${barColor} transition-all duration-500`} style={{ width: `${usagePct}%` }} />
-         </div>
+      {/* Barra de Progreso */}
+      <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+         <div className={`h-full ${barColor} transition-all duration-500`} style={{ width: `${usagePct}%` }} />
+      </div>
 
          {/* Footer Info */}
          <div className="flex justify-between text-[10px] font-medium opacity-60 pt-1">
@@ -86,6 +90,12 @@ function CreditCardMini({ tarjeta }: { tarjeta: Tarjeta }) {
          </div>
       </div>
       
+      {isCancelled && (
+        <span className="absolute right-4 top-4 rounded-full border border-white/30 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white/80">
+          Archivada
+        </span>
+      )}
+
       {/* Icono Hover */}
       <div className="absolute right-4 bottom-4 opacity-0 transform translate-x-4 transition-all group-hover:opacity-100 group-hover:translate-x-0">
          <ChevronRight className="text-white" />
@@ -108,6 +118,10 @@ function CreateCardModal({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const cuentasDisponibles = useMemo(
+    () => cuentas.filter((c) => !c.cerradaEn),
+    [cuentas]
+  );
   
   // Usamos strings en el estado inicial para manejar inputs vacíos limpiamente
   const [form, setForm] = useState({
@@ -200,9 +214,9 @@ function CreateCardModal({
                       onChange={e => setForm(p => ({...p, cuentaId: e.target.value}))}
                    >
                       <option value="">✨ Crear cuenta interna automáticamente (Recomendado)</option>
-                      {cuentas.length > 0 && (
+                      {cuentasDisponibles.length > 0 && (
                           <optgroup label="Vincular a existente (Avanzado)">
-                            {cuentas.map(c => (
+                            {cuentasDisponibles.map(c => (
                                 <option key={c.id} value={c.id}>{c.nombre} ({c.moneda})</option>
                             ))}
                           </optgroup>
@@ -224,8 +238,8 @@ function CreateCardModal({
                         onChange={v => setForm(p => ({...p, moneda: v}))}
                         options={[{label: "Pesos (COP)", value: "COP"}, {label: "Dólares (USD)", value: "USD"}]}
                   />
-                  <NumberField label="Cupo Total" isCurrency value={form.cupoTotal} onChange={v => setForm(p => ({...p, cupoTotal: v}))} />
-                  <NumberField label="Deuda Actual (Saldo Inicial)" isCurrency value={form.saldoInicial} onChange={v => setForm(p => ({...p, saldoInicial: v}))} />
+                  <MoneyField label="Cupo Total" currency={form.moneda} value={form.cupoTotal} onChange={v => setForm(p => ({...p, cupoTotal: v}))} />
+                  <MoneyField label="Deuda Actual (Saldo Inicial)" currency={form.moneda} value={form.saldoInicial} onChange={v => setForm(p => ({...p, saldoInicial: v}))} />
                </div>
             </div>
 

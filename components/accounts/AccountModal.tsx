@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { Modal } from "@/components/ui/Modal";
-import { InputField, SelectField, NumberField } from "@/components/ui/Fields";
+import { InputField, SelectField, NumberField, MoneyField } from "@/components/ui/Fields";
 import { CuentasService } from "@/lib/services/CuentasService";
 import { formatMoney } from "@/lib/formatMoney";
 import { AlertTriangle, Trash2 } from "lucide-react";
@@ -142,7 +142,7 @@ export function AccountModal({
                { label: "Euro (EUR)", value: "EUR" }
              ]}
            />
-           <NumberField
+           <MoneyField
              label={editingId ? "Saldo Actual" : "Saldo Inicial"}
              value={form.saldoInicial}
              onChange={v => setForm(f => ({...f, saldoInicial: v}))}

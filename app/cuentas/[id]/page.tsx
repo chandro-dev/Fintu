@@ -9,11 +9,13 @@ import { TransactionForm } from "@/components/transactions/TransactionForm";
 import type { TxForm, Transaccion } from "@/components/transactions/types";
 import { TransaccionService } from "@/lib/services/TransaccionService";
 import { AccountModal } from "@/components/accounts/AccountModal";
+import { CuentasService } from "@/lib/services/CuentasService";
 
 import { 
   Wallet, ChevronLeft, Plus, TrendingUp, TrendingDown, 
   Settings2, Calculator, Edit3, Search, X, 
-  ArrowRightLeft, Scale, Layers, Filter, Activity
+  ArrowRightLeft, Scale, Layers, Filter, Activity,
+  AlertCircle, Power
 } from "lucide-react";
 
 // =========================================================================
@@ -136,6 +138,7 @@ export default function CuentaDetallePage() {
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
   const [targetBalance, setTargetBalance] = useState<string>("");
   const [editAccountOpen, setEditAccountOpen] = useState(false);
+  const [accountBusy, setAccountBusy] = useState(false);
 
   // --------------------------------------------------------------------------
   // 1. LÓGICA DE FILTRADO INTELIGENTE (Copiada de TransaccionesPage)
@@ -234,7 +237,10 @@ export default function CuentaDetallePage() {
 
   // --- HANDLERS CRUD ---
 
+  const cuentaDeshabilitada = Boolean(cuenta?.cerradaEn);
+
   const startCreate = () => {
+    if (cuentaDeshabilitada) return;
     setEditingTxId(null);
     setTxForm(createEmptyTx(nowLocal, cuentaId));
     setTxError(null);
@@ -284,7 +290,7 @@ export default function CuentaDetallePage() {
   };
 
   const handleAdjustment = async () => {
-    if (!accessToken || !cuenta) return;
+    if (!accessToken || !cuenta || cuentaDeshabilitada) return;
     const target = Number(targetBalance);
     const current = Number(cuenta.saldo);
     if (isNaN(target)) return setTxError("Monto inválido");
@@ -308,6 +314,30 @@ export default function CuentaDetallePage() {
       await refresh({ force: true });
     } catch (err) { setTxError("Error al ajustar"); } 
     finally { setTxBusy(false); }
+  };
+
+  const handleToggleCuenta = async () => {
+    if (!cuenta || !accessToken) return;
+    const activar = cuentaDeshabilitada;
+    const confirmed = confirm(
+      activar
+        ? "¿Deseas habilitar nuevamente esta cuenta?"
+        : "¿Seguro deseas deshabilitar esta cuenta? No podrás registrar nuevas transacciones hasta habilitarla."
+    );
+    if (!confirmed) return;
+    setAccountBusy(true);
+    try {
+      await CuentasService.actualizar(
+        cuenta.id,
+        { cerradaEn: activar ? null : new Date().toISOString() },
+        { accessToken }
+      );
+      await refresh({ force: true });
+    } catch (err) {
+      alert("No se pudo cambiar el estado de la cuenta");
+    } finally {
+      setAccountBusy(false);
+    }
   };
 
   if (loadingSession) return <div className="flex justify-center pt-20">Cargando...</div>;
@@ -340,14 +370,39 @@ export default function CuentaDetallePage() {
           </div>
           
           <div className="flex gap-2">
-            <button onClick={() => { setTargetBalance(String(Number(cuenta?.saldo ?? 0))); setAdjustModalOpen(true); }} className="flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/20 dark:text-zinc-200 dark:hover:bg-white/5">
+            <button
+              onClick={() => { setTargetBalance(String(Number(cuenta?.saldo ?? 0))); setAdjustModalOpen(true); }}
+              disabled={cuentaDeshabilitada}
+              className="flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-white/20 dark:text-zinc-200 dark:hover:bg-white/5"
+            >
               <Settings2 size={16} /> <span className="hidden sm:inline">Ajustar</span>
             </button>
-            <button onClick={startCreate} className="flex items-center gap-2 rounded-full bg-sky-600 px-5 py-2 text-sm font-semibold text-white shadow-lg hover:bg-sky-500">
+            <button
+              onClick={handleToggleCuenta}
+              disabled={accountBusy}
+              className="flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-white/20 dark:text-zinc-200 dark:hover:bg-white/5"
+            >
+              <Power size={16} /> {cuentaDeshabilitada ? "Habilitar" : "Deshabilitar"}
+            </button>
+            <button
+              onClick={startCreate}
+              disabled={cuentaDeshabilitada}
+              className="flex items-center gap-2 rounded-full bg-sky-600 px-5 py-2 text-sm font-semibold text-white shadow-lg hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               <Plus size={18} /> <span className="hidden sm:inline">Nueva</span>
             </button>
           </div>
         </div>
+
+        {cuentaDeshabilitada && (
+          <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-100">
+            <AlertCircle size={18} />
+            <div>
+              <p className="text-sm font-semibold">Cuenta deshabilitada</p>
+              <p className="text-xs">Las nuevas transacciones y ajustes están bloqueados hasta que la habilites nuevamente.</p>
+            </div>
+          </div>
+        )}
 
         {/* --- SECCIÓN DE FILTROS (NUEVO) --- */}
         <div className="space-y-3">

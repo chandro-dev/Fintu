@@ -2,6 +2,56 @@
 
 import React from "react";
 
+const formatCurrencyDisplay = (rawValue: string | number): string => {
+  if (rawValue === null || rawValue === undefined) return "";
+  const raw = typeof rawValue === "number" ? rawValue.toString() : rawValue;
+  if (!raw) return "";
+
+  const isNegative = raw.startsWith("-");
+  const unsigned = isNegative ? raw.slice(1) : raw;
+  const [intPart = "", decimalPart] = unsigned.split(".");
+  const formattedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  let result = formattedInt;
+
+  if (decimalPart !== undefined && decimalPart.length > 0) {
+    result += `,${decimalPart}`;
+  }
+
+  return isNegative ? `-${result}` : result;
+};
+
+const normalizeCurrencyInput = (
+  rawValue: string,
+  allowNegative: boolean,
+  decimals: number
+): string => {
+  if (!rawValue) return "";
+
+  let normalized = rawValue.replace(/\s/g, "");
+  normalized = normalized.replace(/,/g, ".");
+  normalized = normalized.replace(/[^\d.-]/g, "");
+
+  if (allowNegative) {
+    const isNegative = normalized.startsWith("-");
+    normalized = normalized.replace(/-/g, "");
+    normalized = isNegative ? `-${normalized}` : normalized;
+  } else {
+    normalized = normalized.replace(/-/g, "");
+  }
+
+  const parts = normalized.split(".");
+  if (parts.length > 2) {
+    normalized = `${parts.shift()}.${parts.join("")}`;
+  }
+
+  if (decimals >= 0 && normalized.includes(".")) {
+    const [intPart, decimalPart = ""] = normalized.split(".");
+    normalized = `${intPart}.${decimalPart.slice(0, decimals)}`;
+  }
+
+  return normalized;
+};
+
 // ============================================================================
 // INPUT FIELD (Ya lo tenías bien, lo mantengo igual)
 // ============================================================================
@@ -55,7 +105,8 @@ export function NumberField({
   currency = "USD",
   allowNegative = false,
   disabled = false,
-  placeholder, // <--- 1. Agregamos esto
+  placeholder,
+  decimals = 2,
 }: {
   label: string;
   value: number | string;
@@ -64,8 +115,28 @@ export function NumberField({
   currency?: string;
   allowNegative?: boolean;
   disabled?: boolean;
-  placeholder?: string; // <--- 2. Definimos el tipo
+  placeholder?: string;
+  decimals?: number;
 }) {
+  const normalizedValue =
+    value === undefined || value === null ? "" : value;
+  const displayValue = isCurrency
+    ? formatCurrencyDisplay(normalizedValue)
+    : normalizedValue;
+
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (isCurrency) {
+      const sanitized = normalizeCurrencyInput(
+        event.target.value,
+        allowNegative,
+        decimals
+      );
+      onChange(sanitized);
+    } else {
+      onChange(event.target.value);
+    }
+  };
+
   return (
     <label className="flex flex-col gap-1 text-sm text-slate-700 dark:text-zinc-300">
       {label}
@@ -76,14 +147,14 @@ export function NumberField({
           </span>
         )}
         <input
-          type="number"
-          step="0.01"
+          type={isCurrency ? "text" : "number"}
+          step={isCurrency ? undefined : "0.01"}
           inputMode="decimal"
-          min={allowNegative ? undefined : "0"}
-          value={value}
+          min={allowNegative || isCurrency ? undefined : "0"}
+          value={displayValue}
           disabled={disabled}
-          placeholder={placeholder} // <--- 3. Lo pasamos al input
-          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          onChange={handleChange}
           className={`flex-1 rounded-lg border border-black/10 bg-white/80 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 dark:border-white/10 dark:bg-black/40 dark:text-white dark:focus:border-white/30
           ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
         />
@@ -130,6 +201,67 @@ export function SelectField({
           </option>
         ))}
       </select>
+    </label>
+  );
+}
+
+// ============================================================================
+// MONEY FIELD (Nuevo Componente Exclusivo)
+// ============================================================================
+export function MoneyField({
+  label,
+  value,
+  onChange,
+  currency = "COP",
+  placeholder = "0",
+  disabled = false,
+  allowDecimals = true,
+}: {
+  label: string;
+  value: string | number;
+  onChange: (val: string) => void;
+  currency?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  allowDecimals?: boolean;
+}) {
+  const displayValue = formatCurrencyDisplay(value ?? "");
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const decimals = allowDecimals ? 2 : 0;
+    const sanitized = normalizeCurrencyInput(e.target.value, false, decimals);
+    onChange(sanitized);
+  };
+
+  const finalDisplay = displayValue;
+
+  return (
+    <label className="flex flex-col gap-1 text-sm text-slate-700 dark:text-zinc-300">
+      {label}
+      <div className={`flex items-center rounded-lg border border-black/10 bg-white/80 px-3 py-2 text-sm text-slate-900 focus-within:border-slate-300 dark:border-white/10 dark:bg-black/40 dark:text-white dark:focus-within:border-white/30 ${
+          disabled ? "opacity-50 cursor-not-allowed bg-slate-100 dark:bg-white/5" : ""
+        }`}>
+        
+        {/* Símbolo de Moneda Destacado */}
+        <span className="mr-2 font-bold text-slate-400 dark:text-zinc-500 select-none">
+          $
+        </span>
+
+        <input
+          type="text"
+          inputMode={allowDecimals ? "decimal" : "numeric"}
+          value={finalDisplay}
+          onChange={handleChange}
+          disabled={disabled}
+          placeholder={placeholder}
+          className="flex-1 bg-transparent outline-none placeholder:text-slate-400 font-mono"
+        />
+
+        {/* Badge de Moneda (COP/USD) */}
+        <span className="ml-2 text-[10px] font-bold text-slate-400 dark:text-zinc-600">
+          {currency}
+        </span>
+      </div>
     </label>
   );
 }

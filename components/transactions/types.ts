@@ -13,6 +13,7 @@ export type Cuenta = {
   tipoCuentaId: string;
   moneda: string;
   saldo: number;
+  cerradaEn?: string | null;
   limiteCredito?: number | null;
   tasaApr?: number | null;
   diaCorte?: number | null;

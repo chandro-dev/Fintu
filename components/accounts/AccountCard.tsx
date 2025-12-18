@@ -1,6 +1,6 @@
 import { Cuenta } from "@/components/transactions/types";
 import { formatMoney } from "@/lib/formatMoney";
-import { Wallet, CreditCard, Building2 } from "lucide-react";
+import { Wallet, CreditCard, Building2, Ban } from "lucide-react";
 
 interface Props {
   cuenta: Cuenta;
@@ -10,11 +10,14 @@ interface Props {
 export function AccountCard({ cuenta, onClick }: Props) {
   const saldo = Number(cuenta.saldo ?? 0);
   const isNegative = saldo < 0;
+  const isDisabled = Boolean(cuenta.cerradaEn);
 
   return (
     <div
       onClick={onClick}
-      className="group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md dark:border-white/10 dark:bg-white/5 dark:hover:border-white/20"
+      className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md dark:border-white/10 dark:bg-white/5 dark:hover:border-white/20 ${
+        isDisabled ? "opacity-60 grayscale" : ""
+      }`}
     >
       <div className="flex items-start justify-between">
         <div className="flex gap-3">
@@ -75,6 +78,12 @@ export function AccountCard({ cuenta, onClick }: Props) {
       <div className={`absolute bottom-0 left-0 h-1 w-0 transition-all group-hover:w-full ${
           isNegative ? "bg-rose-500" : "bg-sky-500"
       }`} />
+
+      {isDisabled && (
+        <div className="absolute inset-x-4 bottom-4 flex items-center justify-center gap-2 rounded-lg border border-slate-300/70 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-600 backdrop-blur-sm dark:border-white/20 dark:bg-black/60 dark:text-zinc-300">
+          <Ban size={12} /> Cuenta deshabilitada
+        </div>
+      )}
     </div>
   );
 }
