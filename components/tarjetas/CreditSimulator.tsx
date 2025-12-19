@@ -8,7 +8,10 @@ import {
   AlertTriangle, 
   PiggyBank, 
   Clock, 
-  DollarSign 
+  BadgePercent,
+  Wallet,
+  CreditCard,
+  Sparkles
 } from "lucide-react";
 import { MoneyField } from "@/components/ui/Fields";
 
@@ -32,8 +35,9 @@ type ScheduleRow = {
 // ============================================================================
 function StackedBarChart({ capital, interes }: { capital: number; interes: number }) {
   const total = capital + interes;
-  const pctCapital = (capital / total) * 100;
-  const pctInteres = (interes / total) * 100;
+  const safeTotal = total || 1;
+  const pctCapital = (capital / safeTotal) * 100;
+  const pctInteres = (interes / safeTotal) * 100;
 
   return (
     <div className="w-full space-y-2">
@@ -64,12 +68,17 @@ export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual
   // Inicializamos con el saldo actual de la tarjeta
   const [monto, setMonto] = useState(saldoActual);
   const [cuotaMensual, setCuotaMensual] = useState(0);
-  const [tasaEA, setTasaEA] = useState(tasaEfectivaAnual);
+  const [tasaEA, setTasaEA] = useState<number>(() => Number(tasaEfectivaAnual) || 0);
+
+  useEffect(() => {
+    setTasaEA(Number(tasaEfectivaAnual) || 0);
+  }, [tasaEfectivaAnual]);
 
   // Calcular Tasa Mensual (TEM) desde la Anual (TEA)
   // Fórmula: (1 + TEA)^(1/12) - 1
   const tasaMensual = useMemo(() => {
-    return Math.pow(1 + (tasaEA / 100), 1 / 12) - 1;
+    const tea = Number(tasaEA) || 0;
+    return Math.pow(1 + tea / 100, 1 / 12) - 1;
   }, [tasaEA]);
 
   // Pago Mínimo Sugerido (Intuitivo: Intereses + 1.5% capital aprox) para inicializar
@@ -80,6 +89,31 @@ export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual
         setCuotaMensual(Math.ceil(minInteres + minCapital));
      }
   }, [saldoActual, tasaMensual]);
+
+  const disponible = useMemo(
+    () => Math.max(Number(cupoTotal || 0) - Number(saldoActual || 0), 0),
+    [cupoTotal, saldoActual],
+  );
+
+  const usagePct = useMemo(() => {
+    const cupo = Number(cupoTotal || 0);
+    const saldo = Number(saldoActual || 0);
+    if (cupo <= 0) return 0;
+    return Math.min(100, Math.max(0, (saldo / cupo) * 100));
+  }, [cupoTotal, saldoActual]);
+
+  const interesEstimadoMes = useMemo(
+    () => Math.max(0, Number(monto || 0) * tasaMensual),
+    [monto, tasaMensual],
+  );
+
+  const pagoMinimoSugerido = useMemo(() => {
+    const saldo = Math.max(0, Number(monto || 0));
+    if (!saldo) return 0;
+    const minInteres = saldo * tasaMensual;
+    const minCapital = saldo * 0.015;
+    return Math.ceil(minInteres + minCapital);
+  }, [monto, tasaMensual]);
 
   // 2. MOTOR DE SIMULACIÓN (AMORTIZACIÓN)
   const simulacion = useMemo(() => {
@@ -145,22 +179,97 @@ export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-900">
       
       {/* HEADER: TITULO Y RESUMEN RÁPIDO */}
-      <div className="bg-slate-50 p-6 dark:bg-white/5">
-         <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3 text-sky-600 dark:text-sky-400">
-                <div className="rounded-full bg-sky-100 p-2 dark:bg-sky-500/20">
-                    <Calculator size={24} />
-                </div>
-                <div>
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Simulador de Deuda</h3>
-                    <p className="text-xs font-medium opacity-80">Proyección inteligente de pagos</p>
-                </div>
+      <div className="relative overflow-hidden bg-slate-50 p-6 dark:bg-white/5">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-sky-500/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-12 -left-12 h-44 w-44 rounded-full bg-violet-500/10 blur-3xl" />
+
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-white/10 dark:bg-black/20">
+              <Calculator size={22} className="text-sky-600 dark:text-sky-300" />
             </div>
-            <div className="text-right">
-                <p className="text-xs text-slate-500 uppercase tracking-wide">Tasa Efectiva Anual</p>
-                <p className="text-2xl font-bold text-slate-700 dark:text-white">{tasaEA}%</p>
+            <div>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                Simulación de pago (Tarjeta de crédito)
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-zinc-400">
+                Ajusta tu cuota y mira tiempo, intereses y costo total.
+              </p>
             </div>
-         </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-black/20">
+              <div className="flex items-center gap-2 text-slate-500 dark:text-zinc-400">
+                <BadgePercent size={14} />
+                <span className="text-[10px] font-bold uppercase tracking-wider">
+                  TEA / TEM
+                </span>
+              </div>
+              <p className="mt-1 font-mono text-sm font-bold text-slate-900 dark:text-white">
+                {(Number(tasaEA) || 0).toFixed(2)}% / {((Number(tasaMensual) || 0) * 100).toFixed(2)}%
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-black/20">
+              <div className="flex items-center gap-2 text-slate-500 dark:text-zinc-400">
+                <CreditCard size={14} />
+                <span className="text-[10px] font-bold uppercase tracking-wider">
+                  Uso / Disponible
+                </span>
+              </div>
+              <p className="mt-1 font-mono text-sm font-bold text-slate-900 dark:text-white">
+                {usagePct.toFixed(1)}% · {formatMoney(disponible, moneda)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-black/20">
+            <div className="flex items-center gap-2 text-slate-500 dark:text-zinc-400">
+              <Wallet size={14} />
+              <span className="text-[10px] font-bold uppercase tracking-wider">
+                Saldo actual
+              </span>
+            </div>
+            <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
+              {formatMoney(saldoActual, moneda)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-black/20">
+            <div className="flex items-center gap-2 text-slate-500 dark:text-zinc-400">
+              <Sparkles size={14} />
+              <span className="text-[10px] font-bold uppercase tracking-wider">
+                Interés mes (est.)
+              </span>
+            </div>
+            <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
+              {formatMoney(interesEstimadoMes, moneda)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-black/20">
+            <div className="flex items-center gap-2 text-slate-500 dark:text-zinc-400">
+              <PiggyBank size={14} />
+              <span className="text-[10px] font-bold uppercase tracking-wider">
+                Pago mínimo (est.)
+              </span>
+            </div>
+            <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
+              {formatMoney(pagoMinimoSugerido, moneda)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-black/20">
+            <div className="flex items-center gap-2 text-slate-500 dark:text-zinc-400">
+              <Clock size={14} />
+              <span className="text-[10px] font-bold uppercase tracking-wider">
+                Tiempo (con cuota)
+              </span>
+            </div>
+            <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
+              {simulacion.esInfinito ? "No baja" : `${simulacion.meses} meses`}
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12">
@@ -174,27 +283,61 @@ export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual
                       value={monto}
                       onChange={(v) => setMonto(Number(v))}
                       currency={moneda}
+                      minValue={100}
+                      maxValue={100_000_000}
                   />
                   
-                  <div>
-                    <div className="flex justify-between mb-1">
-                        <label className="text-xs font-bold uppercase text-slate-500">Tu Cuota Mensual</label>
-                        <span className="text-xs font-bold text-sky-600">{formatMoney(cuotaMensual, moneda)}</span>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-black/20">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                          Cuota mensual (control)
+                        </p>
+                        <p className="mt-1 text-lg font-bold text-slate-900 dark:text-white">
+                          {formatMoney(cuotaMensual, moneda)}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCuotaMensual(Math.max(100, pagoMinimoSugerido))}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-black/20 dark:text-zinc-200 dark:hover:bg-white/5"
+                        >
+                          Mínimo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCuotaMensual(Math.ceil(Math.max(100, Number(monto || 0) * 0.1)))}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-black/20 dark:text-zinc-200 dark:hover:bg-white/5"
+                        >
+                          10%
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCuotaMensual(Math.ceil(Math.max(100, Number(monto || 0) * 0.2)))}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-black/20 dark:text-zinc-200 dark:hover:bg-white/5"
+                        >
+                          20%
+                        </button>
+                      </div>
                     </div>
-                    {/* SLIDER INTERACTIVO */}
-                    <input 
-                        type="range" 
-                        min={monto * 0.01} // Min 1%
-                        max={monto * 0.5}  // Max 50%
+
+                    <div className="mt-3">
+                      <input
+                        type="range"
+                        min={Math.max(100, Math.floor(Number(monto || 0) * 0.01))}
+                        max={Math.max(100, Math.ceil(Number(monto || 0) * 0.5))}
                         step={1000}
                         value={cuotaMensual}
                         onChange={(e) => setCuotaMensual(Number(e.target.value))}
-                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-600"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1 flex justify-between">
-                        <span>Min: {formatMoney(monto*0.01, moneda)}</span>
-                        <span>Max: {formatMoney(monto*0.5, moneda)}</span>
-                    </p>
+                        className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-sky-600 dark:bg-white/10"
+                      />
+                      <p className="mt-2 flex justify-between text-[10px] font-medium text-slate-400">
+                        <span>Min: {formatMoney(Number(monto || 0) * 0.01, moneda)}</span>
+                        <span>Max: {formatMoney(Number(monto || 0) * 0.5, moneda)}</span>
+                      </p>
+                    </div>
                   </div>
 
                   <MoneyField
@@ -202,6 +345,8 @@ export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual
                       value={cuotaMensual}
                       onChange={(v) => setCuotaMensual(Number(v))}
                       currency={moneda}
+                      minValue={100}
+                      maxValue={100_000_000}
                   />
               </div>
 

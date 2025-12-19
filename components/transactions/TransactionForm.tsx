@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import { InputField, SelectField } from "@/components/ui/Fields";
 import type { Categoria, Cuenta, TxForm } from "./types";
 import { ArrowDown, ArrowUp, ArrowRightLeft } from "lucide-react";
+import { formatMoneyInput, normalizeMoneyInput } from "@/lib/moneyInput";
+
+const MIN_MONTO = 100;
+const MAX_MONTO = 100_000_000;
 
 type Props = {
   form: TxForm;
@@ -40,7 +44,7 @@ export function TransactionForm({
 
   useEffect(() => {
     if (form.monto && form.monto > 0) {
-      setDisplayMonto(new Intl.NumberFormat("es-CO").format(Number(form.monto)));
+      setDisplayMonto(formatMoneyInput(String(form.monto)));
     } else if (!isEditing && form.monto === 0) {
         setDisplayMonto("");
     }
@@ -68,16 +72,23 @@ export function TransactionForm({
   }, [mode]);
 
   const handleMoneyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value.replace(/\D/g, "");
-    if (rawValue === "") {
+    const normalized = normalizeMoneyInput(e.target.value, { decimals: 2 });
+    if (normalized === "") {
       setDisplayMonto("");
       onChange({ monto: 0 });
       return;
     }
-    const numericValue = parseInt(rawValue, 10);
-    const formatted = new Intl.NumberFormat("es-CO").format(numericValue);
-    setDisplayMonto(formatted);
-    onChange({ monto: numericValue });
+    const numericValue = Number(normalized);
+    if (!Number.isFinite(numericValue)) {
+      setDisplayMonto("");
+      onChange({ monto: 0 });
+      return;
+    }
+
+    const clamped = Math.min(MAX_MONTO, Math.max(MIN_MONTO, numericValue));
+    const normalizedClamped = clamped.toFixed(2);
+    setDisplayMonto(formatMoneyInput(normalizedClamped));
+    onChange({ monto: clamped });
   };
 
   const cuentasOrigenOptions = cuentas

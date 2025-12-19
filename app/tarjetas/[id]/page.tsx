@@ -117,7 +117,7 @@ export default function TarjetaDetallePage() {
   const router = useRouter();
   const tarjetaId = params?.id ?? "";
   
-  const { session, cuentas } = useAppData(); 
+  const { session, cuentas, refresh } = useAppData(); 
   const accessToken = session?.access_token;
   const cuentasActivas = useMemo(
     () => cuentas.filter((c) => !c.cerradaEn),
@@ -152,6 +152,7 @@ export default function TarjetaDetallePage() {
     cuotasTotales: 1,
     cuotaId: "",
     cuentaOrigenId: "",
+    autoCalcularInteres: true,
   });
 
   // Formulario Edición
@@ -218,7 +219,8 @@ export default function TarjetaDetallePage() {
           enCuotas: false,
           cuotasTotales: 1,
           cuotaId: compra.id, // ID para el backend
-          cuentaOrigenId: "" // Usuario elige
+          cuentaOrigenId: "", // Usuario elige
+          autoCalcularInteres: true,
       });
       setShowMovModal(true);
   };
@@ -231,9 +233,20 @@ export default function TarjetaDetallePage() {
         setActionError("Selecciona la cuenta bancaria de origen para el pago.");
         return;
     }
-    if (!movForm.monto || Number(movForm.monto) <= 0) {
+    if (
+      movForm.tipo !== "INTERES" &&
+      (!movForm.monto || Number(movForm.monto) <= 0)
+    ) {
         setActionError("El monto debe ser mayor a 0.");
         return;
+    }
+    if (
+      movForm.tipo === "INTERES" &&
+      !movForm.autoCalcularInteres &&
+      (!movForm.monto || Number(movForm.monto) <= 0)
+    ) {
+      setActionError("Define un monto de interés o activa el cálculo automático.");
+      return;
     }
 
     setBusy(true);
@@ -242,18 +255,20 @@ export default function TarjetaDetallePage() {
       await TarjetaService.registrarMovimiento({
           tarjetaId,
           tipo: movForm.tipo,
-          monto: Number(movForm.monto),
+          monto: movForm.tipo === "INTERES" && movForm.autoCalcularInteres ? 0 : Number(movForm.monto),
           descripcion: movForm.descripcion,
           ocurrioEn: movForm.ocurrioEn ? new Date(movForm.ocurrioEn).toISOString() : undefined,
           enCuotas: movForm.enCuotas,
           cuotasTotales: movForm.enCuotas ? Number(movForm.cuotasTotales) : undefined,
           cuotaId: movForm.tipo === "CUOTA" ? movForm.cuotaId || undefined : undefined,
           cuentaOrigenId: (movForm.tipo === "PAGO" || movForm.tipo === "CUOTA") ? movForm.cuentaOrigenId : undefined,
+          autoCalcularInteres: movForm.tipo === "INTERES" ? Boolean(movForm.autoCalcularInteres) : undefined,
       }, { accessToken });
 
       setShowMovModal(false);
       setMovForm(prev => ({ ...prev, monto: "", descripcion: "", enCuotas: false, cuotaId: "" })); 
       await loadData();
+      await refresh({ force: true });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Error al registrar");
     } finally {
@@ -268,6 +283,7 @@ export default function TarjetaDetallePage() {
       await TarjetaService.actualizar(tarjetaId, editForm, { accessToken });
       setShowEditModal(false);
       await loadData();
+      await refresh({ force: true });
     } catch (err) {
       setActionError("Error al actualizar");
     } finally {
@@ -296,6 +312,7 @@ export default function TarjetaDetallePage() {
           }, { accessToken });
           
           await loadData();
+          await refresh({ force: true });
       } catch (err) {
           alert("Error al cambiar estado");
       } finally {
@@ -309,6 +326,7 @@ export default function TarjetaDetallePage() {
     setBusy(true);
     try {
       await TarjetaService.eliminar(tarjetaId, { accessToken });
+      await refresh({ force: true });
       router.push("/tarjetas");
     } catch (err) {
       alert("No se pudo eliminar");
@@ -320,8 +338,74 @@ export default function TarjetaDetallePage() {
   if (loading) return <div className="p-20 text-center opacity-50">Cargando tarjeta...</div>;
   if (!tarjeta) return <div className="p-20 text-center text-slate-500">Tarjeta no encontrada</div>;
 
+  const utilizadoUI = Number(tarjeta.saldoActual || 0);
+  const cupoUI = Number(tarjeta.cupoTotal || 0);
+  const disponibleUI = Math.max(cupoUI - utilizadoUI, 0);
+  const usoPctUI = cupoUI > 0 ? Math.min(100, Math.max(0, (utilizadoUI / cupoUI) * 100)) : 0;
+
+  const teaUI = Number((tarjeta as any).tasaEfectivaAnual || 0);
+  const tasaDiariaUI = teaUI > 0 ? Math.pow(1 + teaUI / 100, 1 / 365) - 1 : 0;
+  const baseFechaMov = movForm.ocurrioEn ? new Date(movForm.ocurrioEn) : new Date();
+  const ultimoInteresDate = useMemo(() => {
+    const last = movimientos
+      .filter((m: any) => m.tipo === "INTERES")
+      .sort((a: any, b: any) => new Date(b.ocurrioEn).getTime() - new Date(a.ocurrioEn).getTime())[0];
+    return last ? new Date(last.ocurrioEn) : null;
+  }, [movimientos]);
+  const diasDesdeUltimoInteres = useMemo(() => {
+    if (!ultimoInteresDate) return 0;
+    const a = new Date(ultimoInteresDate.getFullYear(), ultimoInteresDate.getMonth(), ultimoInteresDate.getDate());
+    const b = new Date(baseFechaMov.getFullYear(), baseFechaMov.getMonth(), baseFechaMov.getDate());
+    const diff = b.getTime() - a.getTime();
+    return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+  }, [ultimoInteresDate, baseFechaMov]);
+  const interesAutoEstimado = useMemo(() => {
+    if (!tasaDiariaUI) return 0;
+    return Math.max(0, utilizadoUI * tasaDiariaUI * diasDesdeUltimoInteres);
+  }, [utilizadoUI, tasaDiariaUI, diasDesdeUltimoInteres]);
+
+  const nextDateForDay = (day: number) => {
+    const y = baseFechaMov.getFullYear();
+    const m = baseFechaMov.getMonth();
+    const d = baseFechaMov.getDate();
+    const targetThisMonth = new Date(y, m, day);
+    if (d <= day) return targetThisMonth;
+    return new Date(y, m + 1, day);
+  };
+  const diasHastaCorte = useMemo(() => {
+    const day = Number((tarjeta as any).diaCorte || 0);
+    if (!day) return 0;
+    const target = nextDateForDay(day);
+    const a = new Date(baseFechaMov.getFullYear(), baseFechaMov.getMonth(), baseFechaMov.getDate());
+    const b = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+    return Math.max(0, Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24)));
+  }, [tarjeta, baseFechaMov]);
+  const diasHastaPago = useMemo(() => {
+    const day = Number((tarjeta as any).diaPago || 0);
+    if (!day) return 0;
+    const target = nextDateForDay(day);
+    const a = new Date(baseFechaMov.getFullYear(), baseFechaMov.getMonth(), baseFechaMov.getDate());
+    const b = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+    return Math.max(0, Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24)));
+  }, [tarjeta, baseFechaMov]);
+
+  const movimientoMontoNum = Number(movForm.monto || 0);
+  const previewNuevoSaldo =
+    movForm.tipo === "PAGO" || movForm.tipo === "CUOTA"
+      ? Math.max(0, utilizadoUI - movimientoMontoNum)
+      : movForm.tipo === "AJUSTE"
+        ? Math.max(0, utilizadoUI + (Number(movForm.monto || 0) >= 0 ? movimientoMontoNum : -movimientoMontoNum))
+        : utilizadoUI + movimientoMontoNum;
+  const previewDisponible = Math.max(cupoUI - previewNuevoSaldo, 0);
+
+  const interesCompraHastaPago = useMemo(() => {
+    if (!tasaDiariaUI) return 0;
+    if (movForm.tipo !== "COMPRA" && movForm.tipo !== "AVANCE") return 0;
+    return Math.max(0, movimientoMontoNum * tasaDiariaUI * diasHastaPago);
+  }, [movForm.tipo, movimientoMontoNum, tasaDiariaUI, diasHastaPago]);
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 px-4 md:px-6 py-8 pb-20 text-slate-900 dark:text-zinc-50">
+    <div className="min-h-screen bg-transparent px-4 md:px-6 py-8 pb-20 text-slate-900 dark:text-zinc-50">
       <div className="mx-auto max-w-5xl space-y-8">
         
         {/* HEADER DE NAVEGACIÓN */}
@@ -477,18 +561,72 @@ export default function TarjetaDetallePage() {
       {/* ================= MODAL: NUEVO MOVIMIENTO ================= */}
       {showMovModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-white/10 p-6 shadow-2xl animate-in zoom-in-95">
-             <div className="flex justify-between items-center mb-6">
-                 <h3 className="text-xl font-bold dark:text-white">
-                    {movForm.tipo === "CUOTA" ? "Abonar a Cuota" : "Registrar en Tarjeta"}
-                 </h3>
-                 <button onClick={() => setShowMovModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full">✕</button>
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900 animate-in zoom-in-95">
+             <div className="relative overflow-hidden border-b border-slate-100 bg-slate-50 p-6 dark:border-white/10 dark:bg-white/5">
+                <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-sky-500/15 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-12 -left-12 h-44 w-44 rounded-full bg-violet-500/10 blur-3xl" />
+
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                      {movForm.tipo === "CUOTA" ? "Abonar a cuota" : "Movimiento en tarjeta"}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-zinc-400">
+                      Esto actualiza la deuda y, si aplica, descuenta el saldo de tu cuenta origen.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowMovModal(false)}
+                    className="rounded-full border border-slate-200 bg-white/70 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-white dark:border-white/10 dark:bg-black/30 dark:text-zinc-200 dark:hover:bg-white/10"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+
+                <div className="mt-5 grid grid-cols-3 gap-3">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-black/20">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-zinc-400">
+                      Deuda actual
+                    </p>
+                    <p className="mt-1 font-mono text-sm font-bold text-slate-900 dark:text-white">
+                      {formatMoney(utilizadoUI, tarjeta.moneda)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-black/20">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-zinc-400">
+                      Después
+                    </p>
+                    <p className="mt-1 font-mono text-sm font-bold text-slate-900 dark:text-white">
+                      {formatMoney(previewNuevoSaldo, tarjeta.moneda)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-black/20">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-zinc-400">
+                      Disponible
+                    </p>
+                    <p className="mt-1 font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                      {formatMoney(previewDisponible, tarjeta.moneda)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
+                  <div
+                    className={`h-full transition-all ${usoPctUI > 90 ? "bg-rose-500" : usoPctUI > 50 ? "bg-amber-400" : "bg-emerald-400"}`}
+                    style={{ width: `${usoPctUI}%` }}
+                  />
+                </div>
              </div>
              
-             {actionError && <div className="mb-4 p-3 bg-rose-50 text-rose-600 rounded-lg text-sm">{actionError}</div>}
+             <div className="p-6">
+               {actionError && (
+                 <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-800/40 dark:bg-rose-500/10 dark:text-rose-300">
+                   {actionError}
+                 </div>
+               )}
 
              <div className="space-y-4">
-                 <div className="grid grid-cols-2 gap-4">
+                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <SelectField 
                         label="Tipo" 
                         value={movForm.tipo} 
@@ -503,15 +641,98 @@ export default function TarjetaDetallePage() {
                             value={movForm.monto}
                             onChange={(v) => setMovForm(p => ({...p, monto: v}))}
                             currency={tarjeta.moneda}
+                            minValue={100}
+                            maxValue={100_000_000}
+                            disabled={movForm.tipo === "INTERES" && movForm.autoCalcularInteres}
                         />
+                        {movForm.tipo === "INTERES" && (
+                          <label className="mt-2 flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-zinc-300">
+                            <input
+                              type="checkbox"
+                              checked={movForm.autoCalcularInteres}
+                              onChange={(e) =>
+                                setMovForm((p) => ({
+                                  ...p,
+                                  autoCalcularInteres: e.target.checked,
+                                  monto: e.target.checked ? "" : p.monto,
+                                }))
+                              }
+                              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-white/20"
+                            />
+                            Calcular interés automáticamente (según TEA y días)
+                          </label>
+                        )}
                         {/* HINT DE ABONO A CAPITAL */}
                         {movForm.tipo === "CUOTA" && (
-                            <p className="text-[10px] text-sky-600 dark:text-sky-400 mt-1 px-1 leading-tight">
-                                💡 Puedes pagar más de lo sugerido. El excedente se aplicará como <b>Abono a Capital</b>.
+                            <p className="mt-1 px-1 text-[10px] leading-tight text-sky-600 dark:text-sky-400">
+                                Puedes pagar más de lo sugerido. El excedente se aplicará como <b>Abono a Capital</b>.
                             </p>
                         )}
                     </div>
                  </div>
+
+                 {(movForm.tipo === "INTERES" || movForm.tipo === "COMPRA" || movForm.tipo === "AVANCE") && (
+                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-black/20">
+                     <div className="mb-2 flex items-center justify-between">
+                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-zinc-400">
+                         Simulación (aprox.)
+                       </p>
+                       <p className="text-[10px] font-semibold text-slate-400 dark:text-zinc-500">
+                         TEA {teaUI ? `${teaUI.toFixed(2)}%` : "—"} · diaria {(tasaDiariaUI * 100).toFixed(3)}%
+                       </p>
+                     </div>
+
+                     {movForm.tipo === "INTERES" && movForm.autoCalcularInteres && (
+                       <div className="grid grid-cols-3 gap-3">
+                         <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-black/20">
+                           <p className="text-[10px] font-bold uppercase text-slate-400">Días</p>
+                           <p className="mt-1 font-mono text-sm font-bold text-slate-900 dark:text-white">
+                             {diasDesdeUltimoInteres}
+                           </p>
+                         </div>
+                         <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-black/20">
+                           <p className="text-[10px] font-bold uppercase text-slate-400">Base</p>
+                           <p className="mt-1 font-mono text-sm font-bold text-slate-900 dark:text-white">
+                             {formatMoney(utilizadoUI, tarjeta.moneda)}
+                           </p>
+                         </div>
+                         <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-black/20">
+                           <p className="text-[10px] font-bold uppercase text-slate-400">Interés</p>
+                           <p className="mt-1 font-mono text-sm font-bold text-rose-600 dark:text-rose-400">
+                             {formatMoney(interesAutoEstimado, tarjeta.moneda)}
+                           </p>
+                         </div>
+                       </div>
+                     )}
+
+                     {(movForm.tipo === "COMPRA" || movForm.tipo === "AVANCE") && movimientoMontoNum > 0 && (
+                       <div className="grid grid-cols-3 gap-3">
+                         <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-black/20">
+                           <p className="text-[10px] font-bold uppercase text-slate-400">Hasta corte</p>
+                           <p className="mt-1 font-mono text-sm font-bold text-slate-900 dark:text-white">
+                             {diasHastaCorte} días
+                           </p>
+                         </div>
+                         <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-black/20">
+                           <p className="text-[10px] font-bold uppercase text-slate-400">Hasta pago</p>
+                           <p className="mt-1 font-mono text-sm font-bold text-slate-900 dark:text-white">
+                             {diasHastaPago} días
+                           </p>
+                         </div>
+                         <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-black/20">
+                           <p className="text-[10px] font-bold uppercase text-slate-400">Interés (a pago)</p>
+                           <p className="mt-1 font-mono text-sm font-bold text-rose-600 dark:text-rose-400">
+                             {formatMoney(interesCompraHastaPago, tarjeta.moneda)}
+                           </p>
+                         </div>
+                       </div>
+                     )}
+
+                     <p className="mt-3 text-[10px] text-slate-400 dark:text-zinc-500">
+                       Estimación simple por días (no usa saldo diario promedio ni gracia por pago total).
+                     </p>
+                   </div>
+                 )}
 
                  <InputField 
                     label="Descripción" 
@@ -546,7 +767,7 @@ export default function TarjetaDetallePage() {
 
                  {/* SI ES PAGO O CUOTA (Require Cuenta Origen) */}
                  {(movForm.tipo === "PAGO" || movForm.tipo === "CUOTA") && (
-                     <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30">
+                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800/30 dark:bg-emerald-900/10">
                         <div className="flex items-center gap-2 mb-2 text-emerald-700 dark:text-emerald-400 font-bold text-sm">
                             <Wallet size={16} /> <span>Origen de los fondos</span>
                         </div>
@@ -564,10 +785,11 @@ export default function TarjetaDetallePage() {
                  )}
              </div>
 
-             <div className="flex justify-end gap-3 mt-8">
-                 <button onClick={() => setShowMovModal(false)} className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-800">Cancelar</button>
-                 <button onClick={handleRegistrarMovimiento} disabled={busy} className="px-6 py-2 rounded-full bg-sky-600 text-white font-bold hover:bg-sky-500 disabled:opacity-50 shadow-lg">
-                    {busy ? "Guardando..." : "Registrar"}
+             </div>
+             <div className="flex justify-end gap-3 border-t border-slate-100 bg-white p-6 dark:border-white/10 dark:bg-zinc-900">
+                 <button onClick={() => setShowMovModal(false)} className="rounded-full px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-zinc-300 dark:hover:bg-white/10">Cancelar</button>
+                 <button onClick={handleRegistrarMovimiento} disabled={busy} className="rounded-full bg-sky-600 px-6 py-2.5 font-bold text-white shadow-lg shadow-sky-600/20 hover:bg-sky-500 disabled:opacity-50">
+                    {busy ? "Guardando..." : "Confirmar movimiento"}
                  </button>
              </div>
           </div>
@@ -577,12 +799,54 @@ export default function TarjetaDetallePage() {
       {/* ================= MODAL: EDITAR TARJETA ================= */}
       {showEditModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-white/10 p-6 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-             <div className="flex justify-between items-center mb-6">
-                 <h3 className="text-xl font-bold dark:text-white">Configuración de Tarjeta</h3>
-                 <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full">✕</button>
+          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+             <div className="relative overflow-hidden border-b border-slate-100 bg-slate-50 p-6 dark:border-white/10 dark:bg-white/5">
+                <div className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-sky-500/15 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-12 -left-12 h-44 w-44 rounded-full bg-violet-500/10 blur-3xl" />
+
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">Configuración de tarjeta</h3>
+                    <p className="text-xs text-slate-500 dark:text-zinc-400">
+                      Ajusta cupo, deuda, tasa y fechas de corte/pago.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowEditModal(false)}
+                    className="rounded-full border border-slate-200 bg-white/70 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-white dark:border-white/10 dark:bg-black/30 dark:text-zinc-200 dark:hover:bg-white/10"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+
+                <div className="mt-5 rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-black p-5 text-white shadow-lg">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-white/60">
+                        {editForm.emisor || "Emisor"}
+                      </p>
+                      <p className="mt-1 truncate text-lg font-bold tracking-wide">
+                        {editForm.nombre || "Tarjeta"}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-white/10 p-2">
+                      <CreditCard size={18} className="text-white/80" />
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-end justify-between">
+                    <div>
+                      <p className="text-[10px] font-semibold text-white/60">Deuda</p>
+                      <p className="font-mono text-xl font-bold">{formatMoney(Number(editForm.saldoActual || 0), tarjeta.moneda)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-semibold text-white/60">Cupo</p>
+                      <p className="font-mono text-sm text-white/70">{formatMoney(Number(editForm.cupoTotal || 0), tarjeta.moneda)}</p>
+                    </div>
+                  </div>
+                </div>
              </div>
-<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+<div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2">
     <InputField 
         label="Nombre" 
         value={editForm.nombre} 
@@ -600,12 +864,16 @@ export default function TarjetaDetallePage() {
         value={editForm.cupoTotal} 
         onChange={(v) => setEditForm((p:any) => ({...p, cupoTotal: Number(v)}))} 
         currency={tarjeta.moneda}
+        minValue={100}
+        maxValue={100_000_000}
     />
     <MoneyField 
         label="Saldo Actual (Deuda)" 
         value={editForm.saldoActual} 
         onChange={(v) => setEditForm((p:any) => ({...p, saldoActual: Number(v)}))} 
         currency={tarjeta.moneda}
+        minValue={100}
+        maxValue={100_000_000}
     />
     
     {/* Tasas y Porcentajes */}
@@ -635,10 +903,10 @@ export default function TarjetaDetallePage() {
     />
 </div>
 
-             <div className="flex justify-end gap-3 mt-8">
-                 <button onClick={() => setShowEditModal(false)} className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-800">Cancelar</button>
-                 <button onClick={handleUpdateTarjeta} disabled={busy} className="px-6 py-2 rounded-full bg-sky-600 text-white font-bold hover:bg-sky-500 disabled:opacity-50">
-                    {busy ? "Guardando..." : "Guardar Cambios"}
+             <div className="flex justify-end gap-3 border-t border-slate-100 bg-white p-6 dark:border-white/10 dark:bg-zinc-900">
+                 <button onClick={() => setShowEditModal(false)} className="rounded-full px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-zinc-300 dark:hover:bg-white/10">Cancelar</button>
+                 <button onClick={handleUpdateTarjeta} disabled={busy} className="rounded-full bg-sky-600 px-6 py-2.5 font-bold text-white shadow-lg shadow-sky-600/20 hover:bg-sky-500 disabled:opacity-50">
+                    {busy ? "Guardando..." : "Guardar cambios"}
                  </button>
              </div>
           </div>

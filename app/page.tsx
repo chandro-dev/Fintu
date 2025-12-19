@@ -14,7 +14,7 @@ export default function Landing() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-sky-100 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-sky-950 dark:text-zinc-50 transition-colors">
+    <div className="min-h-screen bg-transparent text-slate-900 dark:text-zinc-50 transition-colors">
       <div className="mx-auto flex max-w-5xl flex-col gap-8 px-6 py-16">
         <header className="flex flex-col gap-3">
           <p className="text-xs uppercase tracking-[0.3em] text-sky-300">Fintu</p>

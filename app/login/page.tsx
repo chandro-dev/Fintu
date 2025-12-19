@@ -69,14 +69,14 @@ export default function LoginPage() {
 
   if (session?.access_token) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+      <div className="min-h-screen flex items-center justify-center bg-transparent text-white">
         <p className="text-sm text-slate-200">Redirigiendo al dashboard...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-transparent">
       <div className="mx-auto flex max-w-5xl flex-col gap-10 px-6 py-12 text-white">
         <header className="space-y-2">
           <p className="text-xs uppercase tracking-[0.3em] text-sky-400">

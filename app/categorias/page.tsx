@@ -103,7 +103,7 @@ export default function CategoriasPage() {
   const gastos = categorias.filter(c => c.tipo === "GASTO");
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 transition-colors duration-300">
+    <div className="min-h-screen bg-transparent text-slate-900 dark:text-zinc-100 transition-colors duration-300">
       <div className="mx-auto max-w-5xl px-6 py-10">
         
         {/* HEADER */}

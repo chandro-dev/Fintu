@@ -1,56 +1,7 @@
 "use client";
 
 import React from "react";
-
-const formatCurrencyDisplay = (rawValue: string | number): string => {
-  if (rawValue === null || rawValue === undefined) return "";
-  const raw = typeof rawValue === "number" ? rawValue.toString() : rawValue;
-  if (!raw) return "";
-
-  const isNegative = raw.startsWith("-");
-  const unsigned = isNegative ? raw.slice(1) : raw;
-  const [intPart = "", decimalPart] = unsigned.split(".");
-  const formattedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  let result = formattedInt;
-
-  if (decimalPart !== undefined && decimalPart.length > 0) {
-    result += `,${decimalPart}`;
-  }
-
-  return isNegative ? `-${result}` : result;
-};
-
-const normalizeCurrencyInput = (
-  rawValue: string,
-  allowNegative: boolean,
-  decimals: number
-): string => {
-  if (!rawValue) return "";
-
-  let normalized = rawValue.replace(/\s/g, "");
-  normalized = normalized.replace(/,/g, ".");
-  normalized = normalized.replace(/[^\d.-]/g, "");
-
-  if (allowNegative) {
-    const isNegative = normalized.startsWith("-");
-    normalized = normalized.replace(/-/g, "");
-    normalized = isNegative ? `-${normalized}` : normalized;
-  } else {
-    normalized = normalized.replace(/-/g, "");
-  }
-
-  const parts = normalized.split(".");
-  if (parts.length > 2) {
-    normalized = `${parts.shift()}.${parts.join("")}`;
-  }
-
-  if (decimals >= 0 && normalized.includes(".")) {
-    const [intPart, decimalPart = ""] = normalized.split(".");
-    normalized = `${intPart}.${decimalPart.slice(0, decimals)}`;
-  }
-
-  return normalized;
-};
+import { formatMoneyInput, normalizeMoneyInput } from "@/lib/moneyInput";
 
 // ============================================================================
 // INPUT FIELD (Ya lo tenías bien, lo mantengo igual)
@@ -121,16 +72,15 @@ export function NumberField({
   const normalizedValue =
     value === undefined || value === null ? "" : value;
   const displayValue = isCurrency
-    ? formatCurrencyDisplay(normalizedValue)
+    ? formatMoneyInput(normalizedValue)
     : normalizedValue;
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (isCurrency) {
-      const sanitized = normalizeCurrencyInput(
-        event.target.value,
+      const sanitized = normalizeMoneyInput(event.target.value, {
         allowNegative,
-        decimals
-      );
+        decimals,
+      });
       onChange(sanitized);
     } else {
       onChange(event.target.value);
@@ -216,6 +166,8 @@ export function MoneyField({
   placeholder = "0",
   disabled = false,
   allowDecimals = true,
+  minValue,
+  maxValue,
 }: {
   label: string;
   value: string | number;
@@ -224,13 +176,29 @@ export function MoneyField({
   placeholder?: string;
   disabled?: boolean;
   allowDecimals?: boolean;
+  minValue?: number;
+  maxValue?: number;
 }) {
-  const displayValue = formatCurrencyDisplay(value ?? "");
+  const displayValue = formatMoneyInput(value ?? "");
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const decimals = allowDecimals ? 2 : 0;
-    const sanitized = normalizeCurrencyInput(e.target.value, false, decimals);
-    onChange(sanitized);
+    const sanitized = normalizeMoneyInput(e.target.value, { decimals });
+    if (!sanitized) return onChange("");
+
+    const numericValue = Number(sanitized);
+    if (!Number.isFinite(numericValue)) return onChange("");
+
+    const clamped =
+      minValue !== undefined || maxValue !== undefined
+        ? Math.min(
+            maxValue ?? Number.POSITIVE_INFINITY,
+            Math.max(minValue ?? Number.NEGATIVE_INFINITY, numericValue),
+          )
+        : numericValue;
+
+    const normalizedClamped = decimals > 0 ? clamped.toFixed(decimals) : String(Math.trunc(clamped));
+    onChange(normalizedClamped);
   };
 
   const finalDisplay = displayValue;

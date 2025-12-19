@@ -147,6 +147,8 @@ export function AccountModal({
              value={form.saldoInicial}
              onChange={v => setForm(f => ({...f, saldoInicial: v}))}
              currency={form.moneda}
+             minValue={100}
+             maxValue={100_000_000}
            />
         </div>
 

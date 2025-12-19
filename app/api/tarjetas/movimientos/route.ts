@@ -4,6 +4,19 @@ import { getUserFromRequest } from "@/lib/supabaseAdmin";
 
 const cleanId = (id: any) => (id && typeof id === "string" && id.trim() !== "" ? id : null);
 
+function daysBetween(a: Date, b: Date) {
+  const start = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  const end = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+  const diff = end.getTime() - start.getTime();
+  return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+}
+
+function tasaDiariaDesdeTEA(tasaEfectivaAnualPct: number) {
+  const tea = Number(tasaEfectivaAnualPct) || 0;
+  if (tea <= 0) return 0;
+  return Math.pow(1 + tea / 100, 1 / 365) - 1;
+}
+
 async function getTransactionTypeId(codigo: string, nombreDefault: string, descripcionDefault: string) {
   let tipo = await prisma.tipoTransaccion.findFirst({ where: { codigo } });
   if (!tipo) {
@@ -52,14 +65,14 @@ export async function POST(request: Request) {
       enCuotas,
       cuotasTotales,
       cuentaOrigenId, // ESTE ES EL DATO CRÍTICO
-      cuotaId 
+      cuotaId,
+      autoCalcularInteres,
     } = body ?? {};
 
-    if (!tarjetaId || !tipo || !monto || Number(monto) <= 0) {
+    if (!tarjetaId || !tipo) {
       return NextResponse.json({ error: "Datos incompletos" }, { status: 400 });
     }
 
-    const montoNum = Number(monto);
     const fechaMovimiento = ocurrioEn ? new Date(ocurrioEn) : new Date();
 
     // Validar Tarjeta
@@ -69,6 +82,36 @@ export async function POST(request: Request) {
     });
 
     if (!tarjeta) return NextResponse.json({ error: "Tarjeta no encontrada" }, { status: 404 });
+
+    let montoNum = Number(monto);
+
+    if (tipo === "INTERES") {
+      const shouldAuto = Boolean(autoCalcularInteres);
+      if (shouldAuto) {
+        const ultimoInteres = await prisma.tarjetaMovimiento.findFirst({
+          where: { usuarioId: user.id, tarjetaId, tipo: "INTERES" },
+          orderBy: { ocurrioEn: "desc" },
+          select: { ocurrioEn: true },
+        });
+        const baseDate = ultimoInteres?.ocurrioEn ?? tarjeta.abiertaEn ?? tarjeta.creadaEn;
+        const dias = daysBetween(baseDate, fechaMovimiento);
+        const tasaDiaria = tasaDiariaDesdeTEA(Number(tarjeta.tasaEfectivaAnual));
+
+        // Interés simple estimado por días (aprox. al mundo real sin saldo diario promedio).
+        montoNum = Math.max(0, Number(tarjeta.saldoActual) * tasaDiaria * dias);
+      }
+
+      if (!montoNum || !Number.isFinite(montoNum) || montoNum <= 0) {
+        return NextResponse.json(
+          { error: "Monto inválido para interés (o no hay interés a cobrar aún)." },
+          { status: 400 },
+        );
+      }
+    } else {
+      if (!montoNum || !Number.isFinite(montoNum) || montoNum <= 0) {
+        return NextResponse.json({ error: "Datos incompletos" }, { status: 400 });
+      }
+    }
 
     // Validar Cuenta de Origen si es Pago
     if (["PAGO", "CUOTA"].includes(tipo)) {
@@ -110,7 +153,11 @@ export async function POST(request: Request) {
                     monto: montoNum,
                     moneda: tarjeta.moneda,
                     direccion: "SALIDA",
-                    descripcion: descripcion || `${tipo} Tarjeta`,
+                    descripcion:
+                      descripcion ||
+                      (tipo === "INTERES"
+                        ? `Interés (${tarjeta.nombre})`
+                        : `${tipo} Tarjeta`),
                     ocurrioEn: fechaMovimiento,
                     tipoTransaccionId: TIPO_COMPRA_TC_ID
                 }

@@ -8,6 +8,8 @@ import { AccountModal } from "@/components/accounts/AccountModal";
 import { Plus } from "lucide-react";
 import { formatMoney } from "@/lib/formatMoney"; // Asegúrate de que esta función maneje COP
 
+const CODIGO_TIPO_CUENTA_TARJETA_CREDITO = "TARJETA_CREDITO";
+
 // Helper: Encuentra el ID de tipo 'NORMAL'
 const useTipoCuentaNormalId = (tipos: any[]) => {
   return useMemo(() => 
@@ -46,13 +48,21 @@ function CuentasContent() {
     router.push(`/cuentas/${id}`);
   };
 
+  const cuentasVisibles = useMemo(
+    () =>
+      cuentas.filter(
+        (c: any) => c?.tipoCuenta?.codigo !== CODIGO_TIPO_CUENTA_TARJETA_CREDITO,
+      ),
+    [cuentas],
+  );
+
   // 2. Cálculo del Saldo Total Consolidado
   const totalSaldo = useMemo(() => 
-    cuentas.reduce((acc, c) => acc + Number(c.saldo), 0), 
-  [cuentas]);
+    cuentasVisibles.reduce((acc, c) => acc + Number(c.saldo), 0), 
+  [cuentasVisibles]);
 
   // Manejo del estado de carga inicial o de sincronización
-  if (loadingSession || (loadingData && !cuentas.length)) {
+  if (loadingSession || (loadingData && !cuentasVisibles.length)) {
     return <Loading message="Sincronizando cuentas..." />;
   }
 
@@ -90,14 +100,14 @@ function CuentasContent() {
         {/* GRID DE CUENTAS */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           
-          {cuentas.length === 0 && !loadingData ? (
+          {cuentasVisibles.length === 0 && !loadingData ? (
              <div className="col-span-full py-12 text-center text-slate-500 dark:text-zinc-400 border border-dashed border-slate-300 dark:border-white/10 rounded-2xl">
                  <p className="font-semibold">¡Comienza tu gestión financiera!</p>
                  <p className="text-sm">No tienes cuentas. Haz clic en "Nueva cuenta" para empezar.</p>
              </div>
           ) : (
             // Lista de AccountCard
-            cuentas.map(cuenta => (
+            cuentasVisibles.map(cuenta => (
               <AccountCard 
                 key={cuenta.id} 
                 cuenta={cuenta} 
@@ -107,7 +117,7 @@ function CuentasContent() {
           )}
           
           {/* Botón "Fantasma" para crear (Si hay cuentas, lo ponemos al final del grid) */}
-          {cuentas.length > 0 && (
+          {cuentasVisibles.length > 0 && (
             <button
               onClick={handleCreate}
               className="group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-200 p-6 text-slate-400 transition-all hover:border-sky-400 hover:bg-sky-50/20 hover:text-sky-600 dark:border-white/10 dark:hover:bg-white/5"

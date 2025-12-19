@@ -26,6 +26,8 @@ import { DonutRow } from "@/components/ui/charts/DonutRow";
 // Tipos
 import { TxForm } from "@/components/transactions/types";
 
+const CODIGO_TIPO_CUENTA_NORMAL = "NORMAL";
+
 export default function Dashboard() {
   const router = useRouter();
 
@@ -42,11 +44,63 @@ export default function Dashboard() {
   // --- FILTROS ---
   const [filters, setFilters] = useState({
     type: "NORMAL", // Por defecto solo mostramos normales
-    accountId: "",
-    categoryId: "",
+    accountIds: [] as string[],
+    categoryIds: [] as string[],
     dateStart: "",
     dateEnd: ""
   });
+
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
+
+  const cuentasNormales = useMemo(
+    () =>
+      cuentas.filter(
+        (c: any) =>
+          c?.tipoCuenta?.codigo === CODIGO_TIPO_CUENTA_NORMAL && !c?.cerradaEn,
+      ),
+    [cuentas],
+  );
+
+  // Inicializar selección: por defecto todas las cuentas normales
+  useEffect(() => {
+    if (!cuentasNormales.length) return;
+
+    try {
+      const raw = localStorage.getItem("dashboard:filters:v1");
+      if (raw) return;
+    } catch {}
+
+    setFilters((prev) => ({
+      ...prev,
+      accountIds: cuentasNormales.map((c: any) => c.id),
+    }));
+  }, [cuentasNormales]);
+
+  // Persistir selección para UX
+  useEffect(() => {
+    if (!filtersHydrated) return;
+    try {
+      localStorage.setItem("dashboard:filters:v1", JSON.stringify(filters));
+    } catch {}
+  }, [filters, filtersHydrated]);
+
+  // Rehidratar filtros (si existen)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("dashboard:filters:v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          setFilters((prev) => ({
+            ...prev,
+            ...parsed,
+          }));
+        }
+      }
+    } catch {}
+    setFiltersHydrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!loadingSession && !session) {
@@ -56,17 +110,23 @@ export default function Dashboard() {
 
   // --- LÓGICA DE FILTRADO INTELIGENTE (3 TIPOS) ---
   const filteredTransactions = useMemo(() => {
-    return transacciones.filter(tx => {
+    const allowedAccountIds =
+      filters.accountIds?.length > 0
+        ? new Set(filters.accountIds)
+        : new Set(cuentasNormales.map((c: any) => c.id));
+
+    const allowedCategoryIds =
+      filters.categoryIds?.length > 0 ? new Set(filters.categoryIds) : null;
+
+    return transacciones.filter((tx: any) => {
       
       // 1. DETERMINAR EL TIPO REAL DE LA TRANSACCIÓN
       let txType = "NORMAL";
       
-      if (tx.transaccionRelacionadaId) {
-        txType = "TRANSFERENCIA";
-      } else if (tx.descripcion === "Ajuste manual de saldo") {
-        // Identificamos Ajustes por su descripción (según tu implementación anterior)
-        txType = "AJUSTE";
-      }
+      const codigoTipo = tx?.tipoTransaccion?.codigo;
+      if (codigoTipo) txType = codigoTipo;
+      else if (tx.transaccionRelacionadaId) txType = "TRANSFERENCIA";
+      else if (tx.descripcion?.toLowerCase?.().includes("ajuste")) txType = "AJUSTE";
 
       // 2. APLICAR FILTRO DE TIPO
       if (filters.type !== "ALL" && filters.type !== txType) {
@@ -74,10 +134,10 @@ export default function Dashboard() {
       }
 
       // 3. Filtro por Cuenta
-      if (filters.accountId && tx.cuentaId !== filters.accountId) return false;
+      if (!allowedAccountIds.has(tx.cuentaId)) return false;
 
       // 4. Filtro por Categoría
-      if (filters.categoryId && tx.categoria?.id !== filters.categoryId) return false;
+      if (allowedCategoryIds && !allowedCategoryIds.has(tx.categoria?.id)) return false;
 
       // 5. Filtro por Fechas
       if (filters.dateStart) {
@@ -95,16 +155,41 @@ export default function Dashboard() {
 
       return true;
     });
-  }, [transacciones, filters]);
+  }, [transacciones, filters, cuentasNormales]);
 
   // Pasamos los datos FILTRADOS a las métricas
   const {
     totals,
     totalSaldo,
     flowByMonth,
-    gastosPorCategoria,
-    saldoPorTipoCuenta
-  } = useFinancialMetrics(filteredTransactions, cuentas);
+    gastosPorCategoria
+  } = useFinancialMetrics(filteredTransactions, cuentasNormales);
+
+  const saldoPorCuentaSeleccionada = useMemo(() => {
+    const ids =
+      filters.accountIds?.length > 0
+        ? new Set(filters.accountIds)
+        : new Set(cuentasNormales.map((c: any) => c.id));
+
+    return cuentasNormales
+      .filter((c: any) => ids.has(c.id))
+      .map((c: any) => ({
+        id: c.id,
+        nombre: c.nombre,
+        totalAbs: Math.abs(Number(c.saldo ?? 0)),
+      }))
+      .sort((a: any, b: any) => b.totalAbs - a.totalAbs)
+      .slice(0, 6);
+  }, [cuentasNormales, filters.accountIds]);
+
+  const totalSaldoAbsSeleccionado = useMemo(
+    () =>
+      saldoPorCuentaSeleccionada.reduce(
+        (acc: number, i: any) => acc + Number(i.totalAbs || 0),
+        0,
+      ) || 1,
+    [saldoPorCuentaSeleccionada],
+  );
 
   // Estados UI
   const [modals, setModals] = useState({ tx: false, cat: false });
@@ -202,7 +287,7 @@ const handleEditTx = (tx: any) => {
                 {formatMoney(saldoNum)}
               </span>
             </div>
-            <AccountsList cuentas={cuentas} loading={loadingData} />
+            <AccountsList cuentas={cuentasNormales} loading={loadingData} />
           </div>
 
           {/* Categorías */}
@@ -226,7 +311,7 @@ const handleEditTx = (tx: any) => {
             ingresos={totals.ingresos}
             egresos={totals.egresos}
             neto={totals.neto}
-            cuentas={cuentas}
+            cuentas={cuentasNormales}
             categorias={categorias}
             filters={filters}
             setFilters={setFilters}
@@ -260,17 +345,17 @@ const handleEditTx = (tx: any) => {
           </div>
 
           <div className="rounded-2xl border bg-white/80 p-6 shadow dark:border-white/10 dark:bg-white/5">
-            <h3 className="mb-4 font-semibold text-slate-700 dark:text-slate-200">Por tipo de cuenta</h3>
+            <h3 className="mb-4 font-semibold text-slate-700 dark:text-slate-200">Saldos (cuentas)</h3>
             <div className="space-y-3">
-              {saldoPorTipoCuenta.map((item) => (
+              {saldoPorCuentaSeleccionada.map((item: any) => (
                 <DonutRow
-                  key={item.nombre}
+                  key={item.id}
                   label={item.nombre}
-                  value={item.total}
-                  total={totals.ingresos - totals.egresos || totalSaldo || 1}
+                  value={item.totalAbs}
+                  total={totalSaldoAbsSeleccionado}
                 />
               ))}
-              {saldoPorTipoCuenta.length === 0 && (
+              {saldoPorCuentaSeleccionada.length === 0 && (
                 <p className="text-sm text-zinc-400 py-4 text-center">Sin saldos</p>
               )}
             </div>
@@ -321,7 +406,7 @@ const handleEditTx = (tx: any) => {
         open={modals.tx}
         onClose={() => setModals({ ...modals, tx: false })}
         onSuccess={() => refresh({ force: true })}
-        cuentas={cuentas}
+        cuentas={cuentasNormales}
         categorias={categorias}
         accessToken={session.access_token}
         initialData={editingTx}

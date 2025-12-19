@@ -18,7 +18,7 @@ import type { Transaccion, TxForm } from "@/components/transactions/types";
 // Iconos
 import { 
   Search, Filter, SlidersHorizontal, X,
-  TrendingUp, TrendingDown, ArrowRightLeft, Activity, Layers, Scale,ChevronDown
+  TrendingUp, TrendingDown, ArrowRightLeft, Activity, Layers, Scale, ChevronDown, CreditCard
 } from "lucide-react";
 
 // ============================================================================
@@ -27,7 +27,16 @@ import {
 type Summary = { ingresos: number; egresos: number; total: number };
 
 // Definimos los filtros basados en tu lógica de negocio
-type FilterType = "REAL" | "ALL" | "INGRESO" | "GASTO" | "TRANSFERENCIA" | "AJUSTE";
+type FilterType =
+  | "REAL"
+  | "ALL"
+  | "INGRESO"
+  | "GASTO"
+  | "TRANSFERENCIA"
+  | "AJUSTE"
+  | "TARJETA_CREDITO";
+
+const CODIGO_TIPO_CUENTA_TARJETA_CREDITO = "TARJETA_CREDITO";
 
 const createEmptyTxForm = (nowLocal: string, cuentaId = ""): TxForm => ({
   cuentaId, monto: 0, direccion: "SALIDA", descripcion: "", categoriaId: undefined, ocurrioEn: nowLocal,
@@ -84,6 +93,14 @@ export default function TransaccionesPage() {
     const hastaDate = filterHasta ? new Date(filterHasta) : null;
 
     return txs.filter((tx) => {
+      const codigoTipoCuenta = tx.cuenta?.tipoCuenta?.codigo;
+
+      if (filterTipo === "TARJETA_CREDITO") {
+        if (codigoTipoCuenta !== CODIGO_TIPO_CUENTA_TARJETA_CREDITO) return false;
+      } else if (filterTipo !== "ALL") {
+        if (codigoTipoCuenta === CODIGO_TIPO_CUENTA_TARJETA_CREDITO) return false;
+      }
+
       // 1. DEDUCCIÓN INTELIGENTE DEL TIPO
       // Prioridad: 
       // A. Lo que diga la BD (si existe).
@@ -107,6 +124,9 @@ export default function TransaccionesPage() {
       if (filterTipo === "REAL") {
         // REAL = Solo Ingresos y Gastos operativos (NORMAL)
         if (codigoTipo !== "NORMAL") return false;
+      }
+      else if (filterTipo === "TARJETA_CREDITO") {
+        // Ya filtrado arriba por tipo de cuenta; aquí no filtramos por tipo de transacción
       }
       else if (filterTipo === "INGRESO") {
         // Solo NORMALES de tipo ENTRADA
@@ -148,7 +168,6 @@ const summary = useMemo(() => {
         // Ahora confiamos en que el backend envía el objeto correctamente.
         // Si es undefined (datos muy viejos), asumimos NORMAL, pero 
         // los datos nuevos vendrán con "AJUSTE" gracias al paso 2.
-         console.log(tx.tipoTransaccion);
         const codigo = tx.tipoTransaccion?.codigo || "NORMAL";
 
         // 2. REGLA DE NEGOCIO:
@@ -206,7 +225,7 @@ const summary = useMemo(() => {
   if (loadingSession) return <Loading message="Cargando..." />;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 transition-colors duration-300">
+    <div className="min-h-screen bg-transparent text-slate-900 dark:text-zinc-100 transition-colors duration-300">
       <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 md:px-6 py-8">
         
         {/* HEADER */}
@@ -252,6 +271,7 @@ const summary = useMemo(() => {
                     {/* Otros tipos */}
                     <FilterTab active={filterTipo === "TRANSFERENCIA"} onClick={() => setFilterTipo("TRANSFERENCIA")} icon={ArrowRightLeft} label="Transferencias" colorClass="text-slate-500 dark:text-slate-400" />
                     <FilterTab active={filterTipo === "AJUSTE"} onClick={() => setFilterTipo("AJUSTE")} icon={Scale} label="Ajustes" colorClass="text-amber-500" />
+                    <FilterTab active={filterTipo === "TARJETA_CREDITO"} onClick={() => setFilterTipo("TARJETA_CREDITO")} icon={CreditCard} label="Tarjetas crédito" colorClass="text-violet-500" />
                     
                     <FilterTab active={filterTipo === "ALL"} onClick={() => setFilterTipo("ALL")} icon={Layers} label="Todo" />
                  </div>
@@ -262,7 +282,23 @@ const summary = useMemo(() => {
                         <input type="text" placeholder="Buscar..." value={filterQuery} onChange={(e) => setFilterQuery(e.target.value)} className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 py-2.5 pl-10 pr-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 outline-none transition-all" />
                     </div>
                     <SelectField label="Categoría" value={filterCategoria} onChange={setFilterCategoria} options={[{ label: "Todas", value: "" }, ...categorias.map(c => ({ label: c.nombre, value: c.id }))]} />
-                    <SelectField label="Cuenta" value={filterCuenta} onChange={setFilterCuenta} options={[{ label: "Todas", value: "" }, ...cuentas.map(c => ({ label: c.nombre, value: c.id }))]} />
+                    <SelectField
+                      label="Cuenta"
+                      value={filterCuenta}
+                      onChange={setFilterCuenta}
+                      options={[
+                        { label: "Todas", value: "" },
+                        ...cuentas
+                          .filter((c) =>
+                            filterTipo === "TARJETA_CREDITO"
+                              ? c?.tipoCuenta?.codigo ===
+                                CODIGO_TIPO_CUENTA_TARJETA_CREDITO
+                              : c?.tipoCuenta?.codigo !==
+                                CODIGO_TIPO_CUENTA_TARJETA_CREDITO,
+                          )
+                          .map((c) => ({ label: c.nombre, value: c.id })),
+                      ]}
+                    />
                     <div className="flex gap-2 items-end">
                         <input type="date" className="w-full bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2.5 text-xs text-slate-900 dark:text-white focus:border-sky-500 outline-none" value={filterDesde} onChange={(e) => setFilterDesde(e.target.value)} />
                         <span className="text-slate-400 mb-2">➔</span>

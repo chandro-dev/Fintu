@@ -10,6 +10,7 @@ import type { TxForm, Transaccion } from "@/components/transactions/types";
 import { TransaccionService } from "@/lib/services/TransaccionService";
 import { AccountModal } from "@/components/accounts/AccountModal";
 import { CuentasService } from "@/lib/services/CuentasService";
+import { MoneyField } from "@/components/ui/Fields";
 
 import { 
   Wallet, ChevronLeft, Plus, TrendingUp, TrendingDown, 
@@ -504,8 +505,14 @@ export default function CuentaDetallePage() {
                 <p className="text-lg font-mono font-medium dark:text-zinc-300">{formatMoney(Number(cuenta?.saldo), currency)}</p>
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase text-slate-500">Nuevo Saldo Real</label>
-                <input type="number" value={targetBalance} onChange={(e) => setTargetBalance(e.target.value)} className="w-full mt-1 p-3 text-xl font-bold rounded-xl border border-slate-200 bg-slate-50 outline-none dark:border-white/10 dark:bg-black/40 dark:text-white" placeholder="0.00" autoFocus />
+                <MoneyField
+                  label="Nuevo Saldo Real"
+                  value={targetBalance}
+                  onChange={(v) => setTargetBalance(v)}
+                  currency={currency}
+                  minValue={100}
+                  maxValue={100_000_000}
+                />
               </div>
               {/* Vista Previa */}
               {targetBalance && !isNaN(Number(targetBalance)) && (

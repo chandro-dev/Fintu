@@ -2,17 +2,23 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/supabaseAdmin";
 
-// Helper para obtener el tipo de cuenta adecuado (asume que tienes un tipo 'TARJETA' o 'PASIVO' en tu DB)
+const CODIGO_TIPO_CUENTA_TARJETA_CREDITO = "TARJETA_CREDITO";
+
+// Helper para obtener (o crear) el tipo de cuenta de Tarjeta de Crédito
 async function getTipoCuentaTarjeta() {
-  // Intenta buscar por código 'TARJETA', 'CREDITO' o el primero que encuentre
-  const tipo = await prisma.tipoCuenta.findFirst({
-    where: { 
-      OR: [{ codigo: "TARJETA" }, { codigo: "CREDITO" }, { codigo: "PASIVO" }] 
-    }
+  const tipo = await prisma.tipoCuenta.findUnique({
+    where: { codigo: CODIGO_TIPO_CUENTA_TARJETA_CREDITO },
   });
-  
-  // Si no existe, busca cualquiera o lanza error (ajusta según tus semillas de BD)
-  return tipo || await prisma.tipoCuenta.findFirst();
+  if (tipo) return tipo;
+
+  return prisma.tipoCuenta.create({
+    data: {
+      codigo: CODIGO_TIPO_CUENTA_TARJETA_CREDITO,
+      nombre: "Tarjeta de Crédito",
+      descripcion: "Cuenta sombra asociada a una tarjeta de crédito",
+      requiereCorte: true,
+    },
+  });
 }
 
 export async function GET(request: Request) {
@@ -86,9 +92,14 @@ export async function POST(request: Request) {
       } else {
          // Si el usuario eligió una cuenta existente, verificamos que sea suya
          const cuentaExistente = await tx.cuenta.findFirst({
-            where: { id: cuentaId, usuarioId: user.id }
+            where: { id: cuentaId, usuarioId: user.id },
+            include: { tipoCuenta: { select: { codigo: true } } },
          });
          if (!cuentaExistente) throw new Error("La cuenta seleccionada no existe");
+
+         if (cuentaExistente.tipoCuenta?.codigo !== CODIGO_TIPO_CUENTA_TARJETA_CREDITO) {
+           throw new Error(`La cuenta seleccionada debe ser de tipo ${CODIGO_TIPO_CUENTA_TARJETA_CREDITO}`);
+         }
          
          // Opcional: Actualizar el saldo de esa cuenta al saldo inicial indicado
          if (Number(saldoInicial) !== Number(cuentaExistente.saldo)) {

@@ -32,10 +32,6 @@ export  function AccountsList({ cuentas, loading }: AccountsListProps) {
     );
   }
 
-  cuentas.forEach((c) => {
-    console.log(c.moneda);
-  });
-
   return (
     <div className="grid grid-cols-1 gap-3">
       {cuentas.map((c) => {

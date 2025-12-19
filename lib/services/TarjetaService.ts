@@ -39,6 +39,7 @@ export type MovimientoTarjetaPayload = {
   monto: number;
   descripcion?: string;
   ocurrioEn?: string; // ISO Date String
+  autoCalcularInteres?: boolean;
   
   // Específico para Compras en Cuotas
   enCuotas?: boolean;

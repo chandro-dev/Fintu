@@ -139,6 +139,11 @@ function CreateCardModal({
 
   if (!open) return null;
 
+  const cupoNum = Number(form.cupoTotal || 0);
+  const deudaNum = Number(form.saldoInicial || 0);
+  const disponibleNum = Math.max(cupoNum - deudaNum, 0);
+  const usagePct = cupoNum > 0 ? Math.min(100, Math.max(0, (deudaNum / cupoNum) * 100)) : 0;
+
   const handleSubmit = async () => {
     // 1. Validaciones
     if (!form.nombre.trim()) return setError("El nombre es obligatorio");
@@ -161,7 +166,7 @@ function CreateCardModal({
           diaCorte: Number(form.diaCorte),
           diaPago: Number(form.diaPago),
           pagoMinimoPct: Number(form.pagoMinimoPct || 0),
-          // 💡 LÓGICA CLAVE: Si es vacío, mandar undefined para que el backend cree la cuenta
+          // LÓGICA CLAVE: Si es vacío, mandar undefined para que el backend cree la cuenta
           cuentaId: form.cuentaId && form.cuentaId !== "" ? form.cuentaId : undefined 
       };
 
@@ -180,14 +185,94 @@ function CreateCardModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm animate-in fade-in">
-      <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-white/10 p-6 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+      <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
         
-        <div className="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-white/5 pb-4">
-          <div>
-            <h3 className="text-xl font-bold dark:text-white">Nueva Tarjeta</h3>
-            <p className="text-xs text-slate-500">Configura tu tarjeta y su deuda inicial.</p>
+        <div className="relative overflow-hidden border-b border-slate-100 bg-slate-50 p-6 dark:border-white/10 dark:bg-white/5">
+          <div className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-sky-500/15 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-12 -left-12 h-44 w-44 rounded-full bg-violet-500/10 blur-3xl" />
+
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white">Nueva tarjeta</h3>
+              <p className="text-xs text-slate-500 dark:text-zinc-400">
+                Configura cupo, fechas de corte/pago y deuda inicial.
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="rounded-full border border-slate-200 bg-white/70 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-white dark:border-white/10 dark:bg-black/30 dark:text-zinc-200 dark:hover:bg-white/10"
+            >
+              Cerrar
+            </button>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-slate-500">✕</button>
+
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-black p-5 text-white shadow-lg md:col-span-2">
+              <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
+              <div className="relative z-10 flex items-start justify-between">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/60">
+                    {form.emisor?.trim() ? form.emisor : "Emisor"}
+                  </p>
+                  <p className="mt-1 truncate text-lg font-bold tracking-wide">
+                    {form.nombre?.trim() ? form.nombre : "Nombre de la tarjeta"}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white/10 p-2">
+                  <CreditCard size={18} className="text-white/80" />
+                </div>
+              </div>
+
+              <div className="relative z-10 mt-4 space-y-2">
+                <div className="flex justify-between text-[10px] font-semibold text-white/60">
+                  <span>Deuda</span>
+                  <span>Cupo</span>
+                </div>
+                <div className="flex items-end justify-between gap-3">
+                  <span className="font-mono text-xl font-bold">{formatMoney(deudaNum, form.moneda)}</span>
+                  <span className="font-mono text-sm text-white/70">{formatMoney(cupoNum, form.moneda)}</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={`h-full transition-all ${usagePct > 90 ? "bg-rose-500" : usagePct > 50 ? "bg-amber-400" : "bg-emerald-400"}`}
+                    style={{ width: `${usagePct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] font-medium text-white/60">
+                  <span>Disponible: {formatMoney(disponibleNum, form.moneda)}</span>
+                  <span>{usagePct.toFixed(1)}% uso</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-black/20">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-zinc-400">
+                Parámetros
+              </p>
+              <div className="mt-2 space-y-2 text-xs text-slate-600 dark:text-zinc-300">
+                <div className="flex justify-between">
+                  <span>Día corte</span>
+                  <span className="font-mono font-semibold">{form.diaCorte || "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Día pago</span>
+                  <span className="font-mono font-semibold">{form.diaPago || "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>TEA</span>
+                  <span className="font-mono font-semibold">
+                    {form.tasaEfectivaAnual ? `${form.tasaEfectivaAnual}%` : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Pago mínimo</span>
+                  <span className="font-mono font-semibold">
+                    {form.pagoMinimoPct ? `${form.pagoMinimoPct}%` : "—"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {error && (
@@ -196,7 +281,7 @@ function CreateCardModal({
             </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6 p-6 md:grid-cols-2">
             
             {/* DATOS GENERALES */}
             <div className="md:col-span-2 space-y-4">
@@ -206,14 +291,14 @@ function CreateCardModal({
                 </div>
 
                 {/* SELECTOR DE CUENTA INTELIGENTE */}
-                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/5">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-black/20">
                    <label className="text-xs font-bold uppercase text-slate-500 mb-1.5 block">Vinculación Contable</label>
                    <select 
                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 dark:border-white/10 dark:bg-black/30 dark:text-white"
                       value={form.cuentaId}
                       onChange={e => setForm(p => ({...p, cuentaId: e.target.value}))}
                    >
-                      <option value="">✨ Crear cuenta interna automáticamente (Recomendado)</option>
+                      <option value="">Crear cuenta interna automáticamente (Recomendado)</option>
                       {cuentasDisponibles.length > 0 && (
                           <optgroup label="Vincular a existente (Avanzado)">
                             {cuentasDisponibles.map(c => (
@@ -238,8 +323,8 @@ function CreateCardModal({
                         onChange={v => setForm(p => ({...p, moneda: v}))}
                         options={[{label: "Pesos (COP)", value: "COP"}, {label: "Dólares (USD)", value: "USD"}]}
                   />
-                  <MoneyField label="Cupo Total" currency={form.moneda} value={form.cupoTotal} onChange={v => setForm(p => ({...p, cupoTotal: v}))} />
-                  <MoneyField label="Deuda Actual (Saldo Inicial)" currency={form.moneda} value={form.saldoInicial} onChange={v => setForm(p => ({...p, saldoInicial: v}))} />
+                  <MoneyField label="Cupo Total" currency={form.moneda} value={form.cupoTotal} onChange={v => setForm(p => ({...p, cupoTotal: v}))} minValue={100} maxValue={100_000_000} />
+                  <MoneyField label="Deuda Actual (Saldo Inicial)" currency={form.moneda} value={form.saldoInicial} onChange={v => setForm(p => ({...p, saldoInicial: v}))} minValue={100} maxValue={100_000_000} />
                </div>
             </div>
 
@@ -257,8 +342,8 @@ function CreateCardModal({
             </div>
         </div>
 
-        <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-slate-100 dark:border-white/5">
-          <button onClick={onClose} className="px-5 py-2.5 text-sm font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors">Cancelar</button>
+        <div className="flex justify-end gap-3 border-t border-slate-100 bg-white p-6 dark:border-white/10 dark:bg-zinc-900">
+          <button onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-full dark:text-zinc-300 dark:hover:bg-white/10 transition-colors">Cancelar</button>
           <button 
             onClick={handleSubmit} 
             disabled={busy} 
@@ -276,7 +361,7 @@ function CreateCardModal({
 // PÁGINA PRINCIPAL
 // ============================================================================
 export default function TarjetasPage() {
-  const { session, cuentas } = useAppData();
+  const { session, cuentas, refresh } = useAppData();
   const [tarjetas, setTarjetas] = useState<Tarjeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -317,7 +402,7 @@ export default function TarjetasPage() {
   const monedaRef = tarjetas[0]?.moneda || "COP";
 
   return (
-    <div className="min-h-screen px-4 md:px-8 py-10 bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-50 transition-colors">
+    <div className="min-h-screen px-4 md:px-8 py-10 bg-transparent text-slate-900 dark:text-zinc-50 transition-colors">
       <div className="mx-auto max-w-6xl space-y-8">
         
         {/* Header */}
@@ -392,7 +477,10 @@ export default function TarjetasPage() {
         <CreateCardModal 
             open={showModal} 
             onClose={() => setShowModal(false)} 
-            onSuccess={loadTarjetas}
+            onSuccess={async () => {
+              await loadTarjetas();
+              await refresh({ force: true });
+            }}
             cuentas={cuentas}
             accessToken={accessToken}
         />
