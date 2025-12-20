@@ -37,10 +37,11 @@ type TarjetaDetalle = {
   cuentaId: string;
 };
 
-type MovimientoTipo = "COMPRA" | "PAGO" | "INTERES" | "CUOTA" | "AJUSTE";
+type MovimientoTipo = "COMPRA" | "AVANCE" | "PAGO" | "INTERES" | "CUOTA" | "AJUSTE";
 
 const MOV_TIPO_OPTIONS = [
   { label: "Compra", value: "COMPRA" },
+  { label: "Avance", value: "AVANCE" },
   { label: "Pago (Abono a deuda)", value: "PAGO" },
   { label: "Interés cobrado", value: "INTERES" },
   { label: "Pago de cuota específica", value: "CUOTA" },
@@ -49,6 +50,7 @@ const MOV_TIPO_OPTIONS = [
 
 const MOV_TIPO_LABEL: Record<string, string> = {
   COMPRA: "Compra",
+  AVANCE: "Avance",
   PAGO: "Pago",
   INTERES: "Interés",
   CUOTA: "Pago Cuota",
