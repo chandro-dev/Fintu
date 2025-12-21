@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/supabaseAdmin";
+import { allocatePaymentToInterestThenCapital } from "@/lib/creditCard";
 
 const cleanId = (id: any) => (id && typeof id === "string" && id.trim() !== "" ? id : null);
 
@@ -53,6 +54,15 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
   try {
+    // Compat: si el Prisma Client no está regenerado, estos campos pueden no existir aún.
+    // Evita PrismaClientValidationError por argumentos desconocidos.
+    const tarjetaCreditoFields = (prisma as any)?.tarjetaCredito?.fields ?? {};
+    const tarjetaMovimientoFields = (prisma as any)?.tarjetaMovimiento?.fields ?? {};
+    const hasSaldoInteres = Boolean(tarjetaCreditoFields.saldoInteres);
+    const hasSaldoCapital = Boolean(tarjetaCreditoFields.saldoCapital);
+    const hasAplicadoInteres = Boolean(tarjetaMovimientoFields.aplicadoInteres);
+    const hasAplicadoCapital = Boolean(tarjetaMovimientoFields.aplicadoCapital);
+
     const body = await request.json();
     console.log("📥 [API] Recibiendo movimiento:", body); // <--- DEBUG 1
 
@@ -114,7 +124,7 @@ export async function POST(request: Request) {
     }
 
     // Validar Cuenta de Origen si es Pago
-    if (["PAGO", "CUOTA"].includes(tipo)) {
+    if (["PAGO", "CUOTA", "ABONO_CAPITAL"].includes(tipo)) {
         if (!cuentaOrigenId) {
             console.error("❌ [API] Error: Intento de pago sin cuenta de origen");
             return NextResponse.json({ error: "Falta la cuenta de origen para descontar el dinero." }, { status: 400 });
@@ -128,21 +138,22 @@ export async function POST(request: Request) {
 
     // --- INICIO TRANSACCIÓN DB ---
     const resultado = await prisma.$transaction(async (tx) => {
+        let nuevoSaldoInteres = Number((tarjeta as any).saldoInteres ?? 0);
+        let nuevoSaldoCapital = Number((tarjeta as any).saldoCapital ?? 0);
         let nuevoSaldoTarjeta = Number(tarjeta.saldoActual);
         let transaccionId: string | null = null;
         let cuotaRefId: string | null = null;
         let compraRefId: string | null = null;
+        let aplicadoInteres = 0;
+        let aplicadoCapital = 0;
 
-        // Corrección de IDs
-        if (tipo === "CUOTA") {
-            compraRefId = cleanId(cuotaId);
-        }
+        const compraObjetivoId = cleanId(cuotaId);
 
         // ====================================================================
         // CASO A: GASTO (AUMENTA DEUDA)
         // ====================================================================
         if (["COMPRA", "AVANCE", "INTERES"].includes(tipo)) {
-            if ((Number(tarjeta.saldoActual) + montoNum) > Number(tarjeta.cupoTotal)) {
+            if (tipo !== "INTERES" && (Number(tarjeta.saldoActual) + montoNum) > Number(tarjeta.cupoTotal)) {
                 throw new Error("Cupo insuficiente");
             }
 
@@ -183,26 +194,50 @@ export async function POST(request: Request) {
                 });
                 compraRefId = nuevaCompra.id;
             }
-            nuevoSaldoTarjeta += montoNum;
+            if (tipo === "INTERES") {
+              nuevoSaldoInteres += montoNum;
+            } else {
+              nuevoSaldoCapital += montoNum;
+            }
+            nuevoSaldoTarjeta = Math.max(0, nuevoSaldoInteres + nuevoSaldoCapital);
         }
 
         // ====================================================================
         // CASO B: PAGO (DISMINUYE DEUDA Y RESTA BANCO)
         // ====================================================================
-        else if (["PAGO", "CUOTA"].includes(tipo)) {
+        else if (["PAGO", "CUOTA", "ABONO_CAPITAL"].includes(tipo)) {
             
             console.log("🔄 [DB] Iniciando proceso de pago/abono...");
+
+            if (tipo === "CUOTA" && !compraObjetivoId) {
+              throw new Error("Para pagar una cuota específica, envía 'cuotaId' (id de la compra diferida).");
+            }
+
+            const deudaTotal = Math.max(0, nuevoSaldoInteres + nuevoSaldoCapital);
+            if (tipo !== "ABONO_CAPITAL" && montoNum > deudaTotal) {
+              throw new Error("El pago excede la deuda actual de la tarjeta.");
+            }
+            if (tipo === "ABONO_CAPITAL" && montoNum > Math.max(0, nuevoSaldoCapital)) {
+              throw new Error("El abono excede el capital pendiente de la tarjeta.");
+            }
 
             // 1. DESCONTAR DINERO DE LA CUENTA BANCARIA (CRÍTICO)
             // Lo hacemos primero para asegurar que falle si no hay cuenta
             try {
-                await tx.cuenta.update({ 
-                    where: { id: cuentaOrigenId }, 
-                    data: { saldo: { decrement: montoNum } } 
+                const cuentaOrigen = await tx.cuenta.findFirst({
+                  where: { id: cuentaOrigenId, usuarioId: user.id },
+                  select: { saldo: true },
+                });
+                if (!cuentaOrigen) throw new Error("La cuenta de origen no existe o no pertenece al usuario.");
+                if (Number(cuentaOrigen.saldo) < montoNum) throw new Error("Saldo insuficiente en la cuenta de origen.");
+
+                await tx.cuenta.update({
+                  where: { id: cuentaOrigenId },
+                  data: { saldo: { decrement: montoNum } },
                 });
                 console.log("💰 [DB] Saldo descontado de cuenta origen");
             } catch (e) {
-                throw new Error(`No se pudo descontar de la cuenta origen (${cuentaOrigenId}). Verifica que exista.`);
+                throw new Error(e instanceof Error ? e.message : "No se pudo descontar de la cuenta origen.");
             }
 
             // 2. Registrar la SALIDA en el historial del Banco
@@ -227,7 +262,12 @@ export async function POST(request: Request) {
                     monto: montoNum,
                     moneda: tarjeta.moneda,
                     direccion: "ENTRADA",
-                    descripcion: tipo === "CUOTA" ? "Abono a Cuota" : "Abono General",
+                    descripcion:
+                      tipo === "CUOTA"
+                        ? "Abono a Cuota"
+                        : tipo === "ABONO_CAPITAL"
+                          ? "Abono a Capital"
+                          : "Abono General",
                     ocurrioEn: fechaMovimiento,
                     transaccionRelacionadaId: txSalidaBanco.id,
                     tipoTransaccionId: TIPO_PAGO_TC_ID
@@ -241,18 +281,71 @@ export async function POST(request: Request) {
             });
 
             transaccionId = txEntradaTarjeta.id;
-            nuevoSaldoTarjeta = Math.max(0, nuevoSaldoTarjeta - montoNum);
 
-            // 4. Si es Cuota, reducir deuda específica
-            if (tipo === "CUOTA" && compraRefId) {
-                try {
-                    await tx.tarjetaCompra.update({
-                        where: { id: compraRefId },
-                        data: { saldoPendiente: { decrement: montoNum } }
-                    });
-                } catch (e) {
-                    console.warn("⚠️ No se encontró la Compra para actualizar saldo pendiente, pero el pago se procesó.");
-                }
+            if (tipo === "ABONO_CAPITAL") {
+              aplicadoInteres = 0;
+              aplicadoCapital = Math.min(montoNum, Math.max(0, nuevoSaldoCapital));
+              nuevoSaldoCapital = Math.max(0, nuevoSaldoCapital - aplicadoCapital);
+              nuevoSaldoTarjeta = Math.max(0, nuevoSaldoInteres + nuevoSaldoCapital);
+            } else {
+              // 4. Aplicación realista del pago: primero interés, luego capital.
+              const allocation = allocatePaymentToInterestThenCapital(montoNum, {
+                saldoInteres: nuevoSaldoInteres,
+                saldoCapital: nuevoSaldoCapital,
+              });
+              aplicadoInteres = allocation.aplicadoInteres;
+              aplicadoCapital = allocation.aplicadoCapital;
+              nuevoSaldoInteres = allocation.nuevoSaldoInteres;
+              nuevoSaldoCapital = allocation.nuevoSaldoCapital;
+              nuevoSaldoTarjeta = allocation.nuevoSaldoTotal;
+            }
+
+            // 5. Si hay compras diferidas, el capital se aplica como abono a capital (y/o a la compra objetivo).
+            let capitalParaAplicar = aplicadoCapital;
+
+            // Para CUOTA el objetivo es requerido; para ABONO_CAPITAL es opcional (si viene, se prioriza).
+            if ((tipo === "CUOTA" || tipo === "ABONO_CAPITAL") && compraObjetivoId && capitalParaAplicar > 0) {
+              const compra = await tx.tarjetaCompra.findFirst({
+                where: { id: compraObjetivoId, usuarioId: user.id, tarjetaId },
+                select: { id: true, saldoPendiente: true },
+              });
+              if (!compra) throw new Error("La compra diferida seleccionada no existe.");
+
+              const pendiente = Number(compra.saldoPendiente);
+              const aplica = Math.min(capitalParaAplicar, Math.max(0, pendiente));
+              if (aplica > 0) {
+                await tx.tarjetaCompra.update({
+                  where: { id: compra.id },
+                  data: { saldoPendiente: { decrement: aplica } },
+                });
+                capitalParaAplicar -= aplica;
+                compraRefId = compra.id;
+              }
+            }
+
+            if (capitalParaAplicar > 0) {
+              const compras = await tx.tarjetaCompra.findMany({
+                where: {
+                  usuarioId: user.id,
+                  tarjetaId,
+                  saldoPendiente: { gt: 0 },
+                  ...(compraObjetivoId ? { id: { not: compraObjetivoId } } : {}),
+                },
+                orderBy: { ocurrioEn: "asc" },
+                select: { id: true, saldoPendiente: true },
+              });
+
+              for (const c of compras) {
+                if (capitalParaAplicar <= 0) break;
+                const pendiente = Number(c.saldoPendiente);
+                const aplica = Math.min(capitalParaAplicar, Math.max(0, pendiente));
+                if (aplica <= 0) continue;
+                await tx.tarjetaCompra.update({
+                  where: { id: c.id },
+                  data: { saldoPendiente: { decrement: aplica } },
+                });
+                capitalParaAplicar -= aplica;
+              }
             }
         }
 
@@ -273,28 +366,52 @@ export async function POST(request: Request) {
                 }
             });
             transaccionId = nuevaTx.id;
-            nuevoSaldoTarjeta += montoNum;
+            // Ajuste manual afecta el capital por defecto.
+            nuevoSaldoCapital = Math.max(0, nuevoSaldoCapital + montoNum);
+            nuevoSaldoTarjeta = Math.max(0, nuevoSaldoInteres + nuevoSaldoCapital);
         }
 
         // Actualizar saldos globales de la tarjeta
-        await tx.tarjetaCredito.update({ where: { id: tarjetaId }, data: { saldoActual: nuevoSaldoTarjeta } });
+        const tarjetaUpdateData: any = { saldoActual: nuevoSaldoTarjeta };
+        if (hasSaldoInteres) tarjetaUpdateData.saldoInteres = nuevoSaldoInteres;
+        if (hasSaldoCapital) tarjetaUpdateData.saldoCapital = nuevoSaldoCapital;
+
+        await tx.tarjetaCredito.update({
+          where: { id: tarjetaId },
+          data: tarjetaUpdateData,
+        });
         await tx.cuenta.update({ where: { id: tarjeta.cuentaId }, data: { saldo: nuevoSaldoTarjeta } });
 
         // Crear registro en TarjetaMovimiento
-        const nuevoMovimiento = await tx.tarjetaMovimiento.create({
-            data: {
-                usuarioId: user.id,
-                tarjetaId,
-                transaccionId,
-                tipo,
-                monto: montoNum,
-                descripcion: descripcion || tipo,
-                ocurrioEn: fechaMovimiento,
-                saldoPosterior: nuevoSaldoTarjeta,
-                compraId: compraRefId,
-                cuotaId: cuotaRefId // Debería ser null para pagos
-            }
-        });
+        const movimientoData: any = {
+          usuarioId: user.id,
+          tarjetaId,
+          transaccionId,
+          tipo,
+          monto: montoNum,
+          descripcion: descripcion || tipo,
+          ocurrioEn: fechaMovimiento,
+          saldoPosterior: nuevoSaldoTarjeta,
+          compraId: compraRefId,
+          cuotaId: cuotaRefId, // Debería ser null para pagos
+        };
+        if (hasAplicadoInteres) movimientoData.aplicadoInteres = aplicadoInteres;
+        if (hasAplicadoCapital) movimientoData.aplicadoCapital = aplicadoCapital;
+
+        let nuevoMovimiento: any = null;
+        try {
+          nuevoMovimiento = await tx.tarjetaMovimiento.create({ data: movimientoData });
+        } catch (e) {
+          // Compat: si el enum en BD/Client no incluye ABONO_CAPITAL aún, persistimos como PAGO.
+          const msg = e instanceof Error ? e.message : String(e);
+          if (tipo === "ABONO_CAPITAL" && msg.includes("Expected TipoMovimientoTarjeta")) {
+            nuevoMovimiento = await tx.tarjetaMovimiento.create({
+              data: { ...movimientoData, tipo: "PAGO", descripcion: descripcion || "ABONO_CAPITAL" },
+            });
+          } else {
+            throw e;
+          }
+        }
 
         console.log("✅ [API] Movimiento creado exitosamente");
         return nuevoMovimiento;

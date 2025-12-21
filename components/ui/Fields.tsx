@@ -165,7 +165,8 @@ export function MoneyField({
   currency = "COP",
   placeholder = "0",
   disabled = false,
-  allowDecimals = true,
+  allowDecimals,
+  decimals,
   minValue,
   maxValue,
 }: {
@@ -176,14 +177,29 @@ export function MoneyField({
   placeholder?: string;
   disabled?: boolean;
   allowDecimals?: boolean;
+  decimals?: number;
   minValue?: number;
   maxValue?: number;
 }) {
   const displayValue = formatMoneyInput(value ?? "");
 
+  const resolvedDecimals =
+    typeof decimals === "number"
+      ? Math.max(0, Math.trunc(decimals))
+      : allowDecimals === false
+        ? 0
+        : currency === "COP"
+          ? 0
+          : 2;
+
+  const trimTrailingZeros = (raw: string) => {
+    if (!raw.includes(".")) return raw;
+    const trimmed = raw.replace(/0+$/, "").replace(/\.$/, "");
+    return trimmed;
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const decimals = allowDecimals ? 2 : 0;
-    const sanitized = normalizeMoneyInput(e.target.value, { decimals });
+    const sanitized = normalizeMoneyInput(e.target.value, { decimals: resolvedDecimals });
     if (!sanitized) return onChange("");
 
     const numericValue = Number(sanitized);
@@ -197,8 +213,13 @@ export function MoneyField({
           )
         : numericValue;
 
-    const normalizedClamped = decimals > 0 ? clamped.toFixed(decimals) : String(Math.trunc(clamped));
-    onChange(normalizedClamped);
+    if (resolvedDecimals === 0) {
+      onChange(String(Math.trunc(clamped)));
+      return;
+    }
+
+    const fixed = clamped.toFixed(resolvedDecimals);
+    onChange(trimTrailingZeros(fixed));
   };
 
   const finalDisplay = displayValue;
@@ -217,7 +238,7 @@ export function MoneyField({
 
         <input
           type="text"
-          inputMode={allowDecimals ? "decimal" : "numeric"}
+          inputMode={resolvedDecimals > 0 ? "decimal" : "numeric"}
           value={finalDisplay}
           onChange={handleChange}
           disabled={disabled}

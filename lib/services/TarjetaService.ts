@@ -35,7 +35,7 @@ export type TarjetaPayload = {
  */
 export type MovimientoTarjetaPayload = {
   tarjetaId: string;
-  tipo: "COMPRA" | "PAGO" | "INTERES" | "CUOTA" | "AJUSTE" | "AVANCE";
+  tipo: "COMPRA" | "PAGO" | "ABONO_CAPITAL" | "INTERES" | "CUOTA" | "AJUSTE" | "AVANCE";
   monto: number;
   descripcion?: string;
   ocurrioEn?: string; // ISO Date String

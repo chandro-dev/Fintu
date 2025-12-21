@@ -57,14 +57,42 @@ export async function POST(request: Request) {
       diaCorte,
       diaPago,
       pagoMinimoPct = 0,
-      saldoInicial = 0, // Nueva propiedad opcional: si traes deuda de antes
+      saldoInicial = 0, // Se ignora (siempre 0 al crear)
       cuentaId, // Opcional: si el usuario ya creó la cuenta manual antes
+      saldoInteres = 0,
+      saldoCapital,
     } = body ?? {};
 
     // Validaciones básicas
     if (!nombre || !tasaEfectivaAnual || !diaCorte || !diaPago) {
       return NextResponse.json(
         { error: "Faltan campos obligatorios (nombre, TEA, corte, pago)" },
+        { status: 400 },
+      );
+    }
+
+    // Requisito: la tarjeta debe iniciar sin deuda.
+    if (Number(saldoInicial) > 0) {
+      return NextResponse.json(
+        { error: "La tarjeta debe iniciar con saldo inicial 0." },
+        { status: 400 },
+      );
+    }
+    const saldoInicialNum = 0;
+    const saldoInteresNum = Math.max(0, Number(saldoInteres) || 0);
+    const saldoCapitalNum =
+      saldoCapital !== undefined && saldoCapital !== null
+        ? Math.max(0, Number(saldoCapital) || 0)
+        : Math.max(0, saldoInicialNum - saldoInteresNum);
+    const saldoActualNum = Math.max(0, saldoInteresNum + saldoCapitalNum);
+    const cupoTotalNum = Number(cupoTotal) || 0;
+
+    if (cupoTotalNum < 0) {
+      return NextResponse.json({ error: "El cupo no puede ser negativo." }, { status: 400 });
+    }
+    if (moneda === "COP" && cupoTotalNum > 500_000) {
+      return NextResponse.json(
+        { error: "Para COP, el cupo no puede superar $500.000." },
         { status: 400 },
       );
     }
@@ -83,7 +111,7 @@ export async function POST(request: Request) {
               usuarioId: user.id,
               nombre: `TC - ${nombre}`, // Ej: "TC - Visa Oro"
               moneda,
-              saldo: Number(saldoInicial), // La deuda inicial
+              saldo: saldoActualNum, // La deuda inicial total
               institucion: emisor,
               tipoCuentaId: tipoCuenta.id,
             }
@@ -102,10 +130,10 @@ export async function POST(request: Request) {
          }
          
          // Opcional: Actualizar el saldo de esa cuenta al saldo inicial indicado
-         if (Number(saldoInicial) !== Number(cuentaExistente.saldo)) {
+         if (saldoActualNum !== Number(cuentaExistente.saldo)) {
              await tx.cuenta.update({
                  where: { id: cuentaAsociadaId },
-                 data: { saldo: Number(saldoInicial) }
+                 data: { saldo: saldoActualNum }
              });
          }
       }
@@ -118,8 +146,10 @@ export async function POST(request: Request) {
           nombre,
           emisor,
           moneda,
-          cupoTotal: Number(cupoTotal),
-          saldoActual: Number(saldoInicial), // ¡IMPORTANTE! Inicia con la deuda indicada, no hereda mágicamente
+          cupoTotal: cupoTotalNum,
+          saldoInteres: saldoInteresNum,
+          saldoCapital: saldoCapitalNum,
+          saldoActual: saldoActualNum, // saldoInteres + saldoCapital
           tasaEfectivaAnual: Number(tasaEfectivaAnual),
           diaCorte: Number(diaCorte),
           diaPago: Number(diaPago),
@@ -165,7 +195,9 @@ export async function PATCH(request: Request) {
     };
 
     if (rest.cupoTotal !== undefined) dataToUpdate.cupoTotal = Number(rest.cupoTotal);
-    if (rest.saldoActual !== undefined) dataToUpdate.saldoActual = Number(rest.saldoActual);
+    if (rest.saldoInteres !== undefined) dataToUpdate.saldoInteres = Math.max(0, Number(rest.saldoInteres) || 0);
+    if (rest.saldoCapital !== undefined) dataToUpdate.saldoCapital = Math.max(0, Number(rest.saldoCapital) || 0);
+    if (rest.saldoActual !== undefined) dataToUpdate.saldoActual = Math.max(0, Number(rest.saldoActual) || 0);
     if (rest.tasaEfectivaAnual !== undefined) dataToUpdate.tasaEfectivaAnual = Number(rest.tasaEfectivaAnual);
     if (rest.diaCorte !== undefined) dataToUpdate.diaCorte = Number(rest.diaCorte);
     if (rest.diaPago !== undefined) dataToUpdate.diaPago = Number(rest.diaPago);
@@ -174,16 +206,40 @@ export async function PATCH(request: Request) {
 
     // Transacción: Si actualizo el saldo de la tarjeta, debo actualizar la cuenta sombra
     const result = await prisma.$transaction(async (tx) => {
+        // Mantener consistencia entre desgloses y saldo total.
+        const willUpdateBreakdown =
+          rest.saldoInteres !== undefined || rest.saldoCapital !== undefined;
+
+        if (willUpdateBreakdown) {
+          const baseInteres =
+            rest.saldoInteres !== undefined
+              ? Math.max(0, Number(rest.saldoInteres) || 0)
+              : Number(existing.saldoInteres || 0);
+          const baseCapital =
+            rest.saldoCapital !== undefined
+              ? Math.max(0, Number(rest.saldoCapital) || 0)
+              : Number(existing.saldoCapital || 0);
+          dataToUpdate.saldoActual = Math.max(0, baseInteres + baseCapital);
+        } else if (rest.saldoActual !== undefined) {
+          // Si solo se fuerza saldoActual, asumimos que es capital (interés 0).
+          dataToUpdate.saldoInteres = 0;
+          dataToUpdate.saldoCapital = Math.max(0, Number(rest.saldoActual) || 0);
+        }
+
         const updatedTarjeta = await tx.tarjetaCredito.update({
             where: { id },
             data: dataToUpdate
         });
 
         // Sincronización de Saldo (Integridad)
-        if (rest.saldoActual !== undefined) {
+        if (
+          rest.saldoActual !== undefined ||
+          rest.saldoInteres !== undefined ||
+          rest.saldoCapital !== undefined
+        ) {
             await tx.cuenta.update({
                 where: { id: existing.cuentaId },
-                data: { saldo: Number(rest.saldoActual) }
+                data: { saldo: Number(updatedTarjeta.saldoActual) }
             });
         }
         return updatedTarjeta;

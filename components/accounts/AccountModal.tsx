@@ -35,7 +35,7 @@ export function AccountModal({
 }: Props) {
   
   const [form, setForm] = useState<CuentaForm>({
-    nombre: "", moneda: "COP", saldoInicial: "", institucion: ""
+    nombre: "", moneda: "COP", saldoInicial: "0", institucion: ""
   });
   const [busy, setBusy] = useState(false);
 
@@ -50,7 +50,7 @@ export function AccountModal({
           institucion: initialData.institucion ?? ""
         });
       } else {
-        setForm({ nombre: "", moneda: "COP", saldoInicial: "", institucion: "" });
+        setForm({ nombre: "", moneda: "COP", saldoInicial: "0", institucion: "" });
       }
     }
   }, [open, initialData, editingId]);
@@ -147,7 +147,7 @@ export function AccountModal({
              value={form.saldoInicial}
              onChange={v => setForm(f => ({...f, saldoInicial: v}))}
              currency={form.moneda}
-             minValue={100}
+             minValue={0}
              maxValue={100_000_000}
            />
         </div>

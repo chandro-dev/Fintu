@@ -19,15 +19,32 @@ type Props = {
   tasaEfectivaAnual: number;
   moneda: string;
   saldoActual: number;
+  saldoInteres?: number;
+  saldoCapital?: number;
   cupoTotal: number;
+  diaCorte?: number;
+  diaPago?: number;
+  comprasActivas?: {
+    id: string;
+    descripcion?: string | null;
+    montoTotal: number;
+    saldoPendiente: number;
+    cuotasTotales?: number | null;
+    ocurrioEn: string;
+  }[];
 };
 
 type ScheduleRow = {
   mes: number;
-  saldo: number;
-  interesPagado: number;
-  capitalPagado: number;
-  cuota: number;
+  saldoInicio: number;
+  pago: number;
+  pagoInteres: number;
+  pagoCapital: number;
+  interesGenerado: number;
+  saldoFin: number;
+  pagaTodo: boolean;
+  cuotasCubiertas: number;
+  cuotasPendientes: number;
 };
 
 // ============================================================================
@@ -63,12 +80,30 @@ function StackedBarChart({ capital, interes }: { capital: number; interes: numbe
   );
 }
 
-export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual, cupoTotal }: Props) {
+export default function CreditSimulator({
+  tasaEfectivaAnual,
+  moneda,
+  saldoActual,
+  saldoInteres = 0,
+  saldoCapital,
+  cupoTotal,
+  comprasActivas = [],
+}: Props) {
   // 1. ESTADO DEL FORMULARIO
-  // Inicializamos con el saldo actual de la tarjeta
+  // Saldos base (si el backend manda desglose, mejor)
+  const baseInteres = Math.max(0, Number(saldoInteres) || 0);
+  const baseCapital = Math.max(
+    0,
+    saldoCapital !== undefined && saldoCapital !== null
+      ? Number(saldoCapital) || 0
+      : Math.max(0, Number(saldoActual) - baseInteres),
+  );
+
+  // Inicializamos con el saldo actual de la tarjeta como referencia
   const [monto, setMonto] = useState(saldoActual);
   const [cuotaMensual, setCuotaMensual] = useState(0);
   const [tasaEA, setTasaEA] = useState<number>(() => Number(tasaEfectivaAnual) || 0);
+  const [graciaSiPagaTodo, setGraciaSiPagaTodo] = useState(true);
 
   useEffect(() => {
     setTasaEA(Number(tasaEfectivaAnual) || 0);
@@ -81,11 +116,11 @@ export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual
     return Math.pow(1 + tea / 100, 1 / 12) - 1;
   }, [tasaEA]);
 
-  // Pago Mínimo Sugerido (Intuitivo: Intereses + 1.5% capital aprox) para inicializar
+  // Pago Mínimo Sugerido (aprox: interés mes + 1.5% de capital)
   useEffect(() => {
      if (saldoActual > 0 && cuotaMensual === 0) {
-        const minInteres = saldoActual * tasaMensual;
-        const minCapital = saldoActual * 0.015; // Asumimos abono del 1.5%
+        const minInteres = Math.max(0, baseCapital) * tasaMensual;
+        const minCapital = Math.max(0, baseCapital) * 0.015;
         setCuotaMensual(Math.ceil(minInteres + minCapital));
      }
   }, [saldoActual, tasaMensual]);
@@ -102,60 +137,166 @@ export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual
     return Math.min(100, Math.max(0, (saldo / cupo) * 100));
   }, [cupoTotal, saldoActual]);
 
-  const interesEstimadoMes = useMemo(
-    () => Math.max(0, Number(monto || 0) * tasaMensual),
-    [monto, tasaMensual],
-  );
+  const interesEstimadoMes = useMemo(() => {
+    const capital = Math.max(0, baseCapital);
+    return Math.max(0, capital * tasaMensual);
+  }, [baseCapital, tasaMensual]);
 
   const pagoMinimoSugerido = useMemo(() => {
     const saldo = Math.max(0, Number(monto || 0));
     if (!saldo) return 0;
-    const minInteres = saldo * tasaMensual;
-    const minCapital = saldo * 0.015;
+    const minInteres = Math.max(0, baseCapital) * tasaMensual;
+    const minCapital = Math.max(0, baseCapital) * 0.015;
     return Math.ceil(minInteres + minCapital);
-  }, [monto, tasaMensual]);
+  }, [monto, tasaMensual, baseCapital]);
 
-  // 2. MOTOR DE SIMULACIÓN (AMORTIZACIÓN)
+  const comprasOrdenadas = useMemo(() => {
+    return [...(comprasActivas || [])].sort(
+      (a, b) => new Date(a.ocurrioEn).getTime() - new Date(b.ocurrioEn).getTime(),
+    );
+  }, [comprasActivas]);
+
+  const cuotasInfo = useMemo(() => {
+    const items = comprasOrdenadas
+      .filter((c) => Number(c.saldoPendiente) > 0)
+      .map((c) => {
+        const total = Math.max(0, Number(c.montoTotal) || 0);
+        const pendiente = Math.max(0, Number(c.saldoPendiente) || 0);
+        const cuotasTotales = Math.max(1, Math.trunc(Number(c.cuotasTotales || 1)));
+        const cuotaBase = cuotasTotales > 0 ? total / cuotasTotales : total;
+        const restantes = cuotaBase > 0 ? Math.max(1, Math.ceil(pendiente / cuotaBase)) : 1;
+        const cuotaMinAprox = Math.min(pendiente, cuotaBase);
+
+        return {
+          id: c.id,
+          descripcion: c.descripcion || "Compra diferida",
+          ocurrioEn: c.ocurrioEn,
+          pendiente,
+          cuotaBase,
+          restantes,
+          cuotaMinAprox,
+        };
+      });
+
+    const pagoMinCuotasAprox = items.reduce((acc, i) => acc + i.cuotaMinAprox, 0);
+    return { items, pagoMinCuotasAprox };
+  }, [comprasOrdenadas]);
+
+  const allocation = (pago: number, interes: number, capital: number) => {
+    const pagoNum = Math.max(0, Number(pago) || 0);
+    const i = Math.max(0, Number(interes) || 0);
+    const c = Math.max(0, Number(capital) || 0);
+    const pagoInteres = Math.min(pagoNum, i);
+    const resto = pagoNum - pagoInteres;
+    const pagoCapital = Math.min(resto, c);
+    return {
+      pagoInteres,
+      pagoCapital,
+      interesRestante: i - pagoInteres,
+      capitalRestante: c - pagoCapital,
+      pagoReal: pagoInteres + pagoCapital,
+    };
+  };
+
+  // 2. MOTOR DE SIMULACIÓN (ciclos mensuales estilo tarjeta)
   const simulacion = useMemo(() => {
     if (monto <= 0 || cuotaMensual <= 0) return null;
 
-    let saldo = monto;
+    let interes = Math.max(0, baseInteres);
+    let capital = Math.max(0, baseCapital);
+    let saldo = Math.max(0, interes + capital);
     let totalIntereses = 0;
     let meses = 0;
     const historial: ScheduleRow[] = [];
     let esInfinito = false;
 
-    // Límite de seguridad de 360 meses (30 años) para evitar loops infinitos
+    const cuotasState = cuotasInfo.items.map((c) => ({
+      ...c,
+      pendiente: c.pendiente,
+    }));
+
     while (saldo > 0 && meses < 360) {
-        const interesMes = saldo * tasaMensual;
-        
-        // Si la cuota no cubre ni los intereses, la deuda crece infinitamente
-        if (cuotaMensual <= interesMes) {
-            esInfinito = true;
-            break;
+      const saldoInicio = saldo;
+      const pagoDeseado = Math.max(0, Number(cuotaMensual) || 0);
+
+      // Si el usuario intenta pagar más que la deuda, limitamos al saldo.
+      const pago = Math.min(pagoDeseado, saldoInicio);
+      const a = allocation(pago, interes, capital);
+      interes = a.interesRestante;
+      capital = a.capitalRestante;
+
+      const pagaTodo = a.pagoReal >= saldoInicio - 0.01;
+
+      let capitalDisponible = a.pagoCapital;
+      let cuotasCubiertas = 0;
+      let cuotasPendientes = cuotasState.filter((c) => c.pendiente > 0).length;
+
+      if (cuotasState.length > 0 && capitalDisponible > 0) {
+        // 1) cubrir cuota mínima aprox (FIFO)
+        for (const compra of cuotasState) {
+          if (capitalDisponible <= 0) break;
+          if (compra.pendiente <= 0) continue;
+          const cuotaMin = Math.min(compra.pendiente, compra.cuotaMinAprox);
+          const pagoCuota = Math.min(capitalDisponible, cuotaMin);
+          compra.pendiente = Math.max(0, compra.pendiente - pagoCuota);
+          capitalDisponible -= pagoCuota;
+          if (pagoCuota + 0.01 >= cuotaMin) cuotasCubiertas += 1;
         }
 
-        const capitalMes = cuotaMensual - interesMes;
-        let pagoReal = cuotaMensual;
-
-        // Ajuste último mes
-        if (saldo < capitalMes) {
-            pagoReal = saldo + interesMes;
-            saldo = 0;
-        } else {
-            saldo -= capitalMes;
+        // 2) excedente: abono a capital a compras (FIFO)
+        if (capitalDisponible > 0) {
+          for (const compra of cuotasState) {
+            if (capitalDisponible <= 0) break;
+            if (compra.pendiente <= 0) continue;
+            const pagoExtra = Math.min(capitalDisponible, compra.pendiente);
+            compra.pendiente = Math.max(0, compra.pendiente - pagoExtra);
+            capitalDisponible -= pagoExtra;
+          }
         }
+      }
 
-        totalIntereses += interesMes;
-        meses++;
-        
+      // Interés del siguiente ciclo:
+      // - Si paga todo y hay gracia, el interés del próximo corte lo aproximamos en 0.
+      // - Si "revolve" (no paga todo), se genera interés mensual sobre el capital restante.
+      const interesGenerado =
+        graciaSiPagaTodo && pagaTodo ? 0 : Math.max(0, capital * tasaMensual);
+
+      interes = Math.max(0, interes + interesGenerado);
+      saldo = Math.max(0, interes + capital);
+
+      totalIntereses += interesGenerado;
+      meses++;
+
+      // Si el pago no cubre al menos el interés generado (y se está revolviendo), se hace infinito.
+      if (!pagaTodo && cuotaMensual <= interesGenerado) {
+        esInfinito = true;
         historial.push({
-            mes: meses,
-            saldo: Math.max(0, saldo),
-            interesPagado: interesMes,
-            capitalPagado: pagoReal - interesMes,
-            cuota: pagoReal
+          mes: meses,
+          saldoInicio,
+          pago,
+          pagoInteres: a.pagoInteres,
+          pagoCapital: a.pagoCapital,
+          interesGenerado,
+          saldoFin: saldo,
+          pagaTodo,
+          cuotasCubiertas,
+          cuotasPendientes,
         });
+        break;
+      }
+
+      historial.push({
+        mes: meses,
+        saldoInicio,
+        pago,
+        pagoInteres: a.pagoInteres,
+        pagoCapital: a.pagoCapital,
+        interesGenerado,
+        saldoFin: saldo,
+        pagaTodo,
+        cuotasCubiertas,
+        cuotasPendientes,
+      });
     }
 
     const totalPagado = monto + totalIntereses;
@@ -170,7 +311,7 @@ export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual
         costoPorCadaDolar
     };
 
-  }, [monto, cuotaMensual, tasaMensual]);
+	  }, [monto, cuotaMensual, tasaMensual, baseInteres, baseCapital, graciaSiPagaTodo, cuotasInfo]);
 
   // 3. RENDERIZADO
   if (!simulacion) return null;
@@ -193,7 +334,7 @@ export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual
                 Simulación de pago (Tarjeta de crédito)
               </h3>
               <p className="text-xs text-slate-500 dark:text-zinc-400">
-                Ajusta tu cuota y mira tiempo, intereses y costo total.
+                Aproximación por ciclos: si pagas todo antes del pago y hay gracia, el interés se reduce a 0.
               </p>
             </div>
           </div>
@@ -272,7 +413,7 @@ export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12">
+	      <div className="grid grid-cols-1 lg:grid-cols-12">
           
           {/* COLUMNA IZQUIERDA: CONTROLES */}
           <div className="border-r border-slate-100 p-6 dark:border-white/5 lg:col-span-5 space-y-6">
@@ -422,7 +563,7 @@ export default function CreditSimulator({ tasaEfectivaAnual, moneda, saldoActual
                       ].filter(Boolean).map((h, i) => (
                           <div key={i} className="flex justify-between p-3 text-sm">
                               <span className="text-slate-500">Mes {h.mes}</span>
-                              <span className="font-mono font-medium">{formatMoney(h.saldo, moneda)}</span>
+                              <span className="font-mono font-medium">{formatMoney(h.saldoFin, moneda)}</span>
                           </div>
                       ))}
                        <div className="flex justify-between p-3 text-sm bg-emerald-50/50 dark:bg-emerald-900/10">

@@ -33,7 +33,9 @@ enum EstadoTarjeta {
 
 enum TipoMovimientoTarjeta {
   COMPRA
+  AVANCE
   PAGO
+  ABONO_CAPITAL
   INTERES
   CUOTA
   AJUSTE
@@ -116,6 +118,10 @@ model TarjetaCredito {
   emisor            String?
   moneda            String        @default("USD")
   cupoTotal         Decimal       @default(0)
+  /// Interés acumulado y pendiente de pago.
+  saldoInteres      Decimal       @default(0)
+  /// Capital (compras/avances) pendiente de pago.
+  saldoCapital      Decimal       @default(0)
   saldoActual       Decimal       @default(0)
   tasaEfectivaAnual Decimal
   diaCorte          Int
@@ -144,6 +150,10 @@ model TarjetaMovimiento {
   compraId       String?
   tipo           TipoMovimientoTarjeta
   monto          Decimal
+  /// Para pagos: cuánto se aplicó a interés.
+  aplicadoInteres Decimal?             @default(0)
+  /// Para pagos: cuánto se aplicó a capital.
+  aplicadoCapital Decimal?             @default(0)
   descripcion    String?
   ocurrioEn      DateTime
   cuotaId        String?

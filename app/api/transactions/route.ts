@@ -23,18 +23,33 @@ async function cleanupTarjetaMovimiento(
   if (!movimiento) return false;
 
   const monto = Number(movimiento.monto);
+  const aplicadoInteres = Number((movimiento as any).aplicadoInteres ?? 0);
+  const aplicadoCapital = Number((movimiento as any).aplicadoCapital ?? 0);
+  const aplicadoTotal =
+    aplicadoInteres + aplicadoCapital > 0 ? aplicadoInteres + aplicadoCapital : monto;
+
+  // delta = cuánto hay que "deshacer" en saldoActual (increment) al borrar el movimiento:
+  // - Compras/avances/interés suben deuda (+monto) => al borrar, bajamos deuda (-monto)
+  // - Pagos bajan deuda (-aplicadoTotal) => al borrar, subimos deuda (+aplicadoTotal)
   let delta = -monto;
-  if (movimiento.tipo === "PAGO" || movimiento.tipo === "CUOTA") {
-    delta = monto;
-  } else if (movimiento.tipo === "AJUSTE") {
-    delta = -monto;
-  }
+  if (movimiento.tipo === "PAGO" || movimiento.tipo === "CUOTA") delta = aplicadoTotal;
 
   await tx.tarjetaMovimiento.delete({ where: { id: movimiento.id } });
 
   await tx.tarjetaCredito.update({
     where: { id: movimiento.tarjetaId },
-    data: { saldoActual: { increment: delta } },
+    data:
+      movimiento.tipo === "INTERES"
+        ? { saldoInteres: { increment: -monto }, saldoActual: { increment: -monto } }
+        : movimiento.tipo === "COMPRA" || movimiento.tipo === "AVANCE"
+          ? { saldoCapital: { increment: -monto }, saldoActual: { increment: -monto } }
+          : movimiento.tipo === "PAGO" || movimiento.tipo === "CUOTA"
+            ? {
+                saldoInteres: { increment: aplicadoInteres },
+                saldoCapital: { increment: aplicadoCapital || Math.max(0, aplicadoTotal - aplicadoInteres) },
+                saldoActual: { increment: aplicadoTotal },
+              }
+            : { saldoCapital: { increment: -monto }, saldoActual: { increment: -monto } }, // AJUSTE: se trató como capital
   });
   await tx.cuenta.update({
     where: { id: movimiento.tarjeta.cuentaId },
@@ -61,7 +76,7 @@ async function cleanupTarjetaMovimiento(
     await tx.tarjetaCompra
       .update({
         where: { id: movimiento.compraId },
-        data: { saldoPendiente: { increment: monto } },
+        data: { saldoPendiente: { increment: aplicadoCapital || monto } },
       })
       .catch(() => null);
   }
