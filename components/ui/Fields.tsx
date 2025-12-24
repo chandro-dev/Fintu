@@ -58,6 +58,10 @@ export function NumberField({
   disabled = false,
   placeholder,
   decimals = 2,
+  min,
+  max,
+  step,
+  integer = false,
 }: {
   label: string;
   value: number | string;
@@ -68,6 +72,10 @@ export function NumberField({
   disabled?: boolean;
   placeholder?: string;
   decimals?: number;
+  min?: number;
+  max?: number;
+  step?: string;
+  integer?: boolean;
 }) {
   const normalizedValue =
     value === undefined || value === null ? "" : value;
@@ -81,9 +89,25 @@ export function NumberField({
         allowNegative,
         decimals,
       });
+      if (allowNegative && sanitized === "-") return onChange("-");
       onChange(sanitized);
     } else {
-      onChange(event.target.value);
+      const raw = event.target.value;
+      if (raw === "") return onChange("");
+      if (integer) {
+        const cleaned = raw.replace(/[^\d-]/g, "");
+        if (!cleaned) return onChange("");
+        const n = Math.trunc(Number(cleaned));
+        if (!Number.isFinite(n)) return onChange("");
+        const clamped =
+          min !== undefined || max !== undefined
+            ? Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min ?? Number.NEGATIVE_INFINITY, n))
+            : n;
+        onChange(String(clamped));
+        return;
+      }
+
+      onChange(raw);
     }
   };
 
@@ -98,9 +122,10 @@ export function NumberField({
         )}
         <input
           type={isCurrency ? "text" : "number"}
-          step={isCurrency ? undefined : "0.01"}
-          inputMode="decimal"
-          min={allowNegative || isCurrency ? undefined : "0"}
+          step={isCurrency ? undefined : step ?? (integer ? "1" : "0.01")}
+          inputMode={integer ? "numeric" : "decimal"}
+          min={min !== undefined ? String(min) : undefined}
+          max={max !== undefined ? String(max) : undefined}
           value={displayValue}
           disabled={disabled}
           placeholder={placeholder}
@@ -156,6 +181,54 @@ export function SelectField({
 }
 
 // ============================================================================
+// MULTI SELECT FIELD
+// ============================================================================
+export function MultiSelectField({
+  label,
+  values,
+  onChange,
+  options,
+  disabled,
+  hint,
+  size = 6,
+}: {
+  label: string;
+  values: string[];
+  onChange: (v: string[]) => void;
+  options: { label: string; value: string }[];
+  disabled?: boolean;
+  hint?: string;
+  size?: number;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-sm text-slate-700 dark:text-zinc-300">
+      {label}
+      <select
+        multiple
+        value={values}
+        size={Math.max(3, Math.min(size, Math.max(3, options.length || 3)))}
+        disabled={disabled}
+        onChange={(e) => {
+          const selected = Array.from(e.target.selectedOptions)
+            .map((o) => o.value)
+            .filter(Boolean);
+          onChange(Array.from(new Set(selected)));
+        }}
+        className={`min-h-[44px] rounded-lg border border-black/10 bg-white/80 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 dark:border-white/10 dark:bg-black/40 dark:text-white dark:focus:border-white/30
+        ${disabled ? "opacity-50 cursor-not-allowed bg-slate-100 dark:bg-white/5" : ""}`}
+      >
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+      {hint ? <span className="text-xs text-slate-500 dark:text-zinc-400">{hint}</span> : null}
+    </label>
+  );
+}
+
+// ============================================================================
 // MONEY FIELD (Nuevo Componente Exclusivo)
 // ============================================================================
 export function MoneyField({
@@ -165,6 +238,7 @@ export function MoneyField({
   currency = "COP",
   placeholder = "0",
   disabled = false,
+  allowNegative = false,
   allowDecimals,
   decimals,
   minValue,
@@ -176,6 +250,7 @@ export function MoneyField({
   currency?: string;
   placeholder?: string;
   disabled?: boolean;
+  allowNegative?: boolean;
   allowDecimals?: boolean;
   decimals?: number;
   minValue?: number;
@@ -199,8 +274,12 @@ export function MoneyField({
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const sanitized = normalizeMoneyInput(e.target.value, { decimals: resolvedDecimals });
+    const sanitized = normalizeMoneyInput(e.target.value, {
+      decimals: resolvedDecimals,
+      allowNegative,
+    });
     if (!sanitized) return onChange("");
+    if (allowNegative && sanitized === "-") return onChange("-");
 
     const numericValue = Number(sanitized);
     if (!Number.isFinite(numericValue)) return onChange("");
@@ -223,6 +302,12 @@ export function MoneyField({
   };
 
   const finalDisplay = displayValue;
+  const currencySymbol =
+    currency === "EUR"
+      ? "€"
+      : currency === "GBP"
+        ? "£"
+        : "$";
 
   return (
     <label className="flex flex-col gap-1 text-sm text-slate-700 dark:text-zinc-300">
@@ -233,7 +318,7 @@ export function MoneyField({
         
         {/* Símbolo de Moneda Destacado */}
         <span className="mr-2 font-bold text-slate-400 dark:text-zinc-500 select-none">
-          $
+          {currencySymbol}
         </span>
 
         <input

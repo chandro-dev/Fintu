@@ -22,10 +22,21 @@ export class TransaccionService {
   }
 
   private static normalizePayload(form: TxForm, id?: string) {
+    const categoriaIds =
+      Array.isArray(form.categoriaIds) && form.categoriaIds.length > 0
+        ? form.categoriaIds.filter(Boolean)
+        : form.categoriaId
+          ? [form.categoriaId]
+          : [];
+
+    const categoriaId = categoriaIds[0] ?? (form.categoriaId ?? "");
+
     return {
       ...form,
       id,
       monto: Number(form.monto),
+      categoriaId,
+      categoriaIds,
       ocurrioEn: form.ocurrioEn
         ? new Date(form.ocurrioEn).toISOString()
         : new Date().toISOString(),

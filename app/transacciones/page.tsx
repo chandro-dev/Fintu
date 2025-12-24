@@ -39,7 +39,13 @@ type FilterType =
 const CODIGO_TIPO_CUENTA_TARJETA_CREDITO = "TARJETA_CREDITO";
 
 const createEmptyTxForm = (nowLocal: string, cuentaId = ""): TxForm => ({
-  cuentaId, monto: 0, direccion: "SALIDA", descripcion: "", categoriaId: undefined, ocurrioEn: nowLocal,
+  cuentaId,
+  monto: 0,
+  direccion: "SALIDA",
+  descripcion: "",
+  categoriaId: undefined,
+  categoriaIds: [],
+  ocurrioEn: nowLocal,
 });
 
 export default function TransaccionesPage() {
@@ -83,6 +89,20 @@ export default function TransaccionesPage() {
   const forceRefresh = useCallback(() => refresh({ force: true }), [refresh]);
 
   useEffect(() => { setVisibleCount(ITEMS_PER_LOAD); }, [filterQuery, filterTipo, filterCategoria, filterCuenta, filterDesde, filterHasta]);
+
+  const categoriasParaFiltro = useMemo(() => {
+    if (filterTipo === "INGRESO") return categorias.filter((c) => c.tipo === "INGRESO");
+    if (filterTipo === "GASTO") return categorias.filter((c) => c.tipo === "GASTO");
+    if (filterTipo === "TRANSFERENCIA") return [];
+    return categorias;
+  }, [categorias, filterTipo]);
+
+  useEffect(() => {
+    if (!filterCategoria) return;
+    if (!categoriasParaFiltro.some((c) => c.id === filterCategoria)) {
+      setFilterCategoria("");
+    }
+  }, [categoriasParaFiltro, filterCategoria]);
 
   // --------------------------------------------------------------------------
   // LÓGICA DE FILTRADO (ACTUALIZADA SEGÚN CÓDIGOS DE BD)
@@ -191,9 +211,14 @@ const summary = useMemo(() => {
   // Handlers CRUD
   const startEdit = (tx: Transaccion) => {
     setEditingTxId(tx.id);
+    const categoriaIds = Array.isArray(tx.categoriasPivot)
+      ? tx.categoriasPivot.map((p) => p.categoriaId).filter(Boolean)
+      : [];
     setEditForm({
       cuentaId: tx.cuentaId, monto: Number(tx.monto ?? 0), direccion: tx.direccion,
-      descripcion: tx.descripcion ?? "", categoriaId: tx.categoria?.id ?? undefined,
+      descripcion: tx.descripcion ?? "",
+      categoriaId: tx.categoria?.id ?? undefined,
+      categoriaIds: categoriaIds.length > 0 ? categoriaIds : (tx.categoria?.id ? [tx.categoria.id] : []),
       ocurrioEn: new Date(tx.ocurrioEn).toISOString().slice(0, 16),
     });
     setEditError(null);
@@ -281,7 +306,22 @@ const summary = useMemo(() => {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                         <input type="text" placeholder="Buscar..." value={filterQuery} onChange={(e) => setFilterQuery(e.target.value)} className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 py-2.5 pl-10 pr-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 outline-none transition-all" />
                     </div>
-                    <SelectField label="Categoría" value={filterCategoria} onChange={setFilterCategoria} options={[{ label: "Todas", value: "" }, ...categorias.map(c => ({ label: c.nombre, value: c.id }))]} />
+                    <SelectField
+                      label={
+                        filterTipo === "INGRESO"
+                          ? "Categoría (Ingresos)"
+                          : filterTipo === "GASTO"
+                            ? "Categoría (Gastos)"
+                            : "Categoría"
+                      }
+                      value={filterCategoria}
+                      onChange={setFilterCategoria}
+                      options={[
+                        { label: "Todas", value: "" },
+                        ...categoriasParaFiltro.map((c) => ({ label: c.nombre, value: c.id })),
+                      ]}
+                      disabled={filterTipo === "TRANSFERENCIA"}
+                    />
                     <SelectField
                       label="Cuenta"
                       value={filterCuenta}

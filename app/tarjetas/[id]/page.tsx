@@ -852,7 +852,15 @@ export default function TarjetaDetallePage() {
                               <NumberField 
                                   label="Meses (Cuotas)" 
                                   value={movForm.cuotasTotales} 
-                                  onChange={(v) => setMovForm(p => ({...p, cuotasTotales: Number(v)}))} 
+                                  onChange={(v) =>
+                                    setMovForm((p) => ({
+                                      ...p,
+                                      cuotasTotales: Math.max(2, Math.min(60, Math.trunc(Number(v) || 2))),
+                                    }))
+                                  }
+                                  integer
+                                  min={2}
+                                  max={60}
                               />
                               {planCuotas && movimientoMontoNum > 0 && (
                                 <div className="grid grid-cols-3 gap-3">
@@ -1013,12 +1021,18 @@ export default function TarjetaDetallePage() {
         value={editForm.diaCorte} 
         onChange={(v) => setEditForm((p:any) => ({...p, diaCorte: Number(v)}))} 
         placeholder="1-31"
+        integer
+        min={1}
+        max={31}
     />
     <NumberField 
         label="Día Pago" 
         value={editForm.diaPago} 
         onChange={(v) => setEditForm((p:any) => ({...p, diaPago: Number(v)}))} 
         placeholder="1-31"
+        integer
+        min={1}
+        max={31}
     />
 </div>
 

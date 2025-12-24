@@ -14,6 +14,7 @@ const emptyTx: TxForm = {
   descripcion: "",
   ocurrioEn: "",
   categoriaId: "",
+  categoriaIds: [],
 };
 
 interface TransactionModalProps {

@@ -430,11 +430,27 @@ function CreateCardModal({
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <NumberField label="Día de corte" placeholder="1-31" value={form.diaCorte} onChange={v => setForm(p => ({...p, diaCorte: v}))} />
+                        <NumberField
+                          label="Día de corte"
+                          placeholder="1-31"
+                          value={form.diaCorte}
+                          onChange={v => setForm(p => ({...p, diaCorte: v}))}
+                          integer
+                          min={1}
+                          max={31}
+                        />
                         <p className="text-[10px] text-slate-400 dark:text-zinc-500">Día del mes en que cierra el ciclo.</p>
                       </div>
                       <div className="space-y-1">
-                        <NumberField label="Día de pago" placeholder="1-31" value={form.diaPago} onChange={v => setForm(p => ({...p, diaPago: v}))} />
+                        <NumberField
+                          label="Día de pago"
+                          placeholder="1-31"
+                          value={form.diaPago}
+                          onChange={v => setForm(p => ({...p, diaPago: v}))}
+                          integer
+                          min={1}
+                          max={31}
+                        />
                         <p className="text-[10px] text-slate-400 dark:text-zinc-500">Fecha límite para pagar sin mora.</p>
                       </div>
                   </div>

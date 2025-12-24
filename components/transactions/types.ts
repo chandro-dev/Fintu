@@ -37,6 +37,7 @@ export type TxForm = {
   direccion: "ENTRADA" | "SALIDA";
   descripcion: string;
   categoriaId?: string;
+  categoriaIds?: string[]; // Permite múltiples categorías (la primera actúa como principal)
   ocurrioEn?: string; // ISO string date
   isAjuste?: boolean;
   // Campos para Transferencias y Lógica extra
@@ -73,6 +74,7 @@ export type Transaccion = {
   };
   
   categoria?: Categoria | null;
+  categoriasPivot?: { categoriaId: string; categoria: Categoria }[]; // tags extra (incluye la principal si se guarda)
   etiquetas?: string[]; // Array de strings simple
   
   createdAt?: string;

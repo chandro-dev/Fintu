@@ -12,6 +12,34 @@ const limpiarCategoriaId = (id: any) => {
   return id;
 };
 
+const normalizeCategoriaIds = (raw: any): string[] => {
+  if (!Array.isArray(raw)) return [];
+  const ids = raw
+    .map((v) => (typeof v === "string" ? v.trim() : ""))
+    .filter((v) => v.length > 0);
+  return Array.from(new Set(ids));
+};
+
+async function syncCategoriasPivot(
+  tx: Prisma.TransactionClient,
+  {
+    usuarioId,
+    transaccionIds,
+    categoriaIds,
+  }: { usuarioId: string; transaccionIds: string[]; categoriaIds: string[] },
+) {
+  await tx.transaccionCategoria.deleteMany({
+    where: { usuarioId, transaccionId: { in: transaccionIds } },
+  });
+  if (categoriaIds.length === 0) return;
+  await tx.transaccionCategoria.createMany({
+    data: transaccionIds.flatMap((transaccionId) =>
+      categoriaIds.map((categoriaId) => ({ usuarioId, transaccionId, categoriaId })),
+    ),
+    skipDuplicates: true,
+  });
+}
+
 async function cleanupTarjetaMovimiento(
   tx: Prisma.TransactionClient,
   transaccionId: string
@@ -112,6 +140,12 @@ export async function GET(request: Request) {
       take: limit,
       include: {
         categoria: true,
+        categoriasPivot: {
+          select: {
+            categoriaId: true,
+            categoria: true,
+          },
+        },
         cuenta: {
           select: {
             nombre: true,
@@ -162,6 +196,8 @@ export async function POST(request: Request) {
     }
 
     const categoriaIdFinal = limpiarCategoriaId(categoriaId);
+    const categoriaIds = normalizeCategoriaIds(body?.categoriaIds);
+    const categoriaIdPrimaria = categoriaIds[0] ?? categoriaIdFinal;
     const fecha = ocurrioEn ? new Date(ocurrioEn) : new Date();
 
     // ========================================================================
@@ -179,7 +215,7 @@ export async function POST(request: Request) {
           data: {
             usuarioId: user.id, cuentaId, monto: Number(monto), moneda, direccion: "SALIDA",
             ocurrioEn: fecha, descripcion: descripcion || "Transferencia enviada",
-            categoriaId: categoriaIdFinal, tipoTransaccionId: tipoTransferenciaId,
+            categoriaId: categoriaIdPrimaria, tipoTransaccionId: tipoTransferenciaId,
           }
         });
         const entrada = await tx.transaccion.create({
@@ -190,6 +226,18 @@ export async function POST(request: Request) {
           }
         });
         await tx.transaccion.update({ where: { id: salida.id }, data: { transaccionRelacionadaId: entrada.id } });
+
+        await syncCategoriasPivot(tx, {
+          usuarioId: user.id,
+          transaccionIds: [salida.id, entrada.id],
+          categoriaIds:
+            categoriaIds.length > 0
+              ? categoriaIds
+              : categoriaIdPrimaria
+                ? [categoriaIdPrimaria]
+                : [],
+        });
+
         await tx.cuenta.update({ where: { id: cuentaId }, data: { saldo: { decrement: Number(monto) } } });
         await tx.cuenta.update({ where: { id: cuentaDestinoId }, data: { saldo: { increment: Number(monto) } } });
 
@@ -211,27 +259,41 @@ export async function POST(request: Request) {
         
         const delta = direccion === "ENTRADA" ? Number(monto) : -Number(monto);
 
-        const [txn] = await prisma.$transaction([
-            prisma.transaccion.create({
-                data: {
-                    usuarioId: user.id,
-                    cuentaId,
-                    monto: Number(monto),
-                    moneda,
-                    direccion, // ENTRADA o SALIDA
-                    ocurrioEn: fecha,
-                    descripcion: descripcion || "Ajuste de saldo",
-                    categoriaId: categoriaIdFinal,
-                    // AQUÍ ASIGNAMOS EL TIPO CORRECTO PARA QUE EL SUMMARY LO IGNORE:
-                    tipoTransaccionId: tipoAjusteId, 
-                    conciliada: true, // Los ajustes suelen nacer conciliados
-                },
-            }),
-            prisma.cuenta.update({
-                where: { id: cuentaId },
-                data: { saldo: { increment: delta } },
-            }),
-        ]);
+        const txn = await prisma.$transaction(async (tx) => {
+          const created = await tx.transaccion.create({
+            data: {
+              usuarioId: user.id,
+              cuentaId,
+              monto: Number(monto),
+              moneda,
+              direccion, // ENTRADA o SALIDA
+              ocurrioEn: fecha,
+              descripcion: descripcion || "Ajuste de saldo",
+              categoriaId: categoriaIdPrimaria,
+              // AQUÍ ASIGNAMOS EL TIPO CORRECTO PARA QUE EL SUMMARY LO IGNORE:
+              tipoTransaccionId: tipoAjusteId,
+              conciliada: true, // Los ajustes suelen nacer conciliados
+            },
+          });
+
+          await syncCategoriasPivot(tx, {
+            usuarioId: user.id,
+            transaccionIds: [created.id],
+            categoriaIds:
+              categoriaIds.length > 0
+                ? categoriaIds
+                : categoriaIdPrimaria
+                  ? [categoriaIdPrimaria]
+                  : [],
+          });
+
+          await tx.cuenta.update({
+            where: { id: cuentaId },
+            data: { saldo: { increment: delta } },
+          });
+
+          return created;
+        });
 
         return NextResponse.json(txn, { status: 201 });
     }
@@ -244,18 +306,39 @@ export async function POST(request: Request) {
     const tipoNormalId = await getTipoTransaccionId("NORMAL", "Normal", "Usuario");
     const delta = direccion === "ENTRADA" ? Number(monto) : -Number(monto);
 
-    const [txn] = await prisma.$transaction([
-      prisma.transaccion.create({
+    const txn = await prisma.$transaction(async (tx) => {
+      const created = await tx.transaccion.create({
         data: {
-          usuarioId: user.id, cuentaId, monto: Number(monto), moneda, direccion,
-          ocurrioEn: fecha, descripcion, categoriaId: categoriaIdFinal, tipoTransaccionId: tipoNormalId,
+          usuarioId: user.id,
+          cuentaId,
+          monto: Number(monto),
+          moneda,
+          direccion,
+          ocurrioEn: fecha,
+          descripcion,
+          categoriaId: categoriaIdPrimaria,
+          tipoTransaccionId: tipoNormalId,
         },
-      }),
-      prisma.cuenta.update({
+      });
+
+      await syncCategoriasPivot(tx, {
+        usuarioId: user.id,
+        transaccionIds: [created.id],
+        categoriaIds:
+          categoriaIds.length > 0
+            ? categoriaIds
+            : categoriaIdPrimaria
+              ? [categoriaIdPrimaria]
+              : [],
+      });
+
+      await tx.cuenta.update({
         where: { id: cuentaId },
         data: { saldo: { increment: delta } },
-      }),
-    ]);
+      });
+
+      return created;
+    });
 
     return NextResponse.json(txn, { status: 201 });
 
@@ -279,22 +362,46 @@ export async function PATCH(request: Request) {
 
     const nextMonto = monto !== undefined ? Number(monto) : Number(existing.monto);
     const nextCuenta = cuentaId ?? existing.cuentaId;
+    const incomingCategoriaIds = normalizeCategoriaIds(body?.categoriaIds);
 
     if (existing.transaccionRelacionadaId) {
       if (nextMonto !== Number(existing.monto) || nextCuenta !== existing.cuentaId) {
         return NextResponse.json({ error: "Para cambiar monto o cuenta de una transferencia, elimínela y créela de nuevo." }, { status: 400 });
       }
 
+      const relatedId = existing.transaccionRelacionadaId;
+      const categoriaIdFinal =
+        incomingCategoriaIds[0] ??
+        (body.hasOwnProperty("categoriaId")
+          ? limpiarCategoriaId(categoriaId)
+          : existing.categoriaId);
+
       const commonData = {
         descripcion: descripcion ?? existing.descripcion,
         ocurrioEn: ocurrioEn ? new Date(ocurrioEn) : existing.ocurrioEn,
-        categoriaId: body.hasOwnProperty('categoriaId') ? limpiarCategoriaId(categoriaId) : existing.categoriaId,
+        categoriaId: categoriaIdFinal,
       };
 
-      await prisma.$transaction([
-        prisma.transaccion.update({ where: { id: existing.id }, data: commonData }),
-        prisma.transaccion.update({ where: { id: existing.transaccionRelacionadaId }, data: commonData })
-      ]);
+      await prisma.$transaction(async (tx) => {
+        await tx.transaccion.update({ where: { id: existing.id }, data: commonData });
+        await tx.transaccion.update({
+          where: { id: relatedId },
+          data: commonData,
+        });
+
+        if (incomingCategoriaIds.length > 0 || body.hasOwnProperty("categoriaId")) {
+          await syncCategoriasPivot(tx, {
+            usuarioId: user.id,
+            transaccionIds: [existing.id, relatedId],
+            categoriaIds:
+              incomingCategoriaIds.length > 0
+                ? incomingCategoriaIds
+                : categoriaIdFinal
+                  ? [categoriaIdFinal]
+                  : [],
+          });
+        }
+      });
 
       return NextResponse.json({ ok: true, message: "Transferencia actualizada" });
     }
@@ -302,7 +409,11 @@ export async function PATCH(request: Request) {
     const nextDireccion = direccion ?? existing.direccion;
     const oldDelta = existing.direccion === "ENTRADA" ? Number(existing.monto) : -Number(existing.monto);
     const newDelta = nextDireccion === "ENTRADA" ? nextMonto : -nextMonto;
-    const categoriaIdFinal = body.hasOwnProperty('categoriaId') ? limpiarCategoriaId(categoriaId) : existing.categoriaId;
+    const categoriaIdFinal =
+      incomingCategoriaIds[0] ??
+      (body.hasOwnProperty("categoriaId")
+        ? limpiarCategoriaId(categoriaId)
+        : existing.categoriaId);
 
     const dataToUpdate = {
       cuentaId: nextCuenta, monto: nextMonto, direccion: nextDireccion,
@@ -312,16 +423,53 @@ export async function PATCH(request: Request) {
 
     if (existing.cuentaId === nextCuenta) {
       const diff = newDelta - oldDelta;
-      await prisma.$transaction([
-        prisma.transaccion.update({ where: { id }, data: dataToUpdate }),
-        ...(diff !== 0 ? [prisma.cuenta.update({ where: { id: nextCuenta }, data: { saldo: { increment: diff } } })] : [])
-      ]);
+      await prisma.$transaction(async (tx) => {
+        await tx.transaccion.update({ where: { id }, data: dataToUpdate });
+        if (diff !== 0) {
+          await tx.cuenta.update({
+            where: { id: nextCuenta },
+            data: { saldo: { increment: diff } },
+          });
+        }
+
+        if (incomingCategoriaIds.length > 0 || body.hasOwnProperty("categoriaId")) {
+          await syncCategoriasPivot(tx, {
+            usuarioId: user.id,
+            transaccionIds: [id],
+            categoriaIds:
+              incomingCategoriaIds.length > 0
+                ? incomingCategoriaIds
+                : categoriaIdFinal
+                  ? [categoriaIdFinal]
+                  : [],
+          });
+        }
+      });
     } else {
-      await prisma.$transaction([
-        prisma.transaccion.update({ where: { id }, data: dataToUpdate }),
-        prisma.cuenta.update({ where: { id: existing.cuentaId }, data: { saldo: { increment: -oldDelta } } }),
-        prisma.cuenta.update({ where: { id: nextCuenta }, data: { saldo: { increment: newDelta } } }),
-      ]);
+      await prisma.$transaction(async (tx) => {
+        await tx.transaccion.update({ where: { id }, data: dataToUpdate });
+        await tx.cuenta.update({
+          where: { id: existing.cuentaId },
+          data: { saldo: { increment: -oldDelta } },
+        });
+        await tx.cuenta.update({
+          where: { id: nextCuenta },
+          data: { saldo: { increment: newDelta } },
+        });
+
+        if (incomingCategoriaIds.length > 0 || body.hasOwnProperty("categoriaId")) {
+          await syncCategoriasPivot(tx, {
+            usuarioId: user.id,
+            transaccionIds: [id],
+            categoriaIds:
+              incomingCategoriaIds.length > 0
+                ? incomingCategoriaIds
+                : categoriaIdFinal
+                  ? [categoriaIdFinal]
+                  : [],
+          });
+        }
+      });
     }
 
     return NextResponse.json({ ok: true });
@@ -353,6 +501,10 @@ export async function DELETE(request: Request) {
           const handled1 = await cleanupTarjetaMovimiento(tx, existing.id);
           const handled2 = await cleanupTarjetaMovimiento(tx, pareja.id);
 
+          await tx.transaccionCategoria.deleteMany({
+            where: { usuarioId: user.id, transaccionId: { in: [existing.id, pareja.id] } },
+          });
+
           await tx.transaccion.delete({ where: { id: existing.id } });
           await tx.transaccion.delete({ where: { id: pareja.id } });
 
@@ -376,6 +528,9 @@ export async function DELETE(request: Request) {
     const delta = existing.direccion === "ENTRADA" ? -Number(existing.monto) : Number(existing.monto);
     await prisma.$transaction(async (tx) => {
       const handled = await cleanupTarjetaMovimiento(tx, existing.id);
+      await tx.transaccionCategoria.deleteMany({
+        where: { usuarioId: user.id, transaccionId: existing.id },
+      });
       await tx.transaccion.delete({ where: { id } });
       if (!handled) {
         await tx.cuenta.update({

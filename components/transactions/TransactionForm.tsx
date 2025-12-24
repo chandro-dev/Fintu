@@ -1,13 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { InputField, SelectField } from "@/components/ui/Fields";
+import { useEffect, useMemo, useState } from "react";
+import { InputField, MoneyField, MultiSelectField, SelectField } from "@/components/ui/Fields";
 import type { Categoria, Cuenta, TxForm } from "./types";
 import { ArrowDown, ArrowUp, ArrowRightLeft } from "lucide-react";
-import { formatMoneyInput, normalizeMoneyInput } from "@/lib/moneyInput";
-
-const MIN_MONTO = 100;
-const MAX_MONTO = 100_000_000;
+import { parseMoneyInputToNumber } from "@/lib/moneyInput";
 
 type Props = {
   form: TxForm;
@@ -40,16 +37,6 @@ export function TransactionForm({
     form.isTransferencia ? "TRANSFERENCIA" : (form.direccion as Mode) || "SALIDA"
   );
 
-  const [displayMonto, setDisplayMonto] = useState("");
-
-  useEffect(() => {
-    if (form.monto && form.monto > 0) {
-      setDisplayMonto(formatMoneyInput(String(form.monto)));
-    } else if (!isEditing && form.monto === 0) {
-        setDisplayMonto("");
-    }
-  }, [form.monto, isEditing]);
-
   useEffect(() => {
     // Si estamos editando y ya era transferencia, mantenemos el modo
     if (isEditing && form.isTransferencia) return;
@@ -59,7 +46,8 @@ export function TransactionForm({
         isTransferencia: true, 
         direccion: "SALIDA",
         descripcion: "", 
-        categoriaId: undefined 
+        categoriaId: undefined,
+        categoriaIds: [] 
       });
     } else {
       onChange({ 
@@ -71,25 +59,10 @@ export function TransactionForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
-  const handleMoneyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const normalized = normalizeMoneyInput(e.target.value, { decimals: 2 });
-    if (normalized === "") {
-      setDisplayMonto("");
-      onChange({ monto: 0 });
-      return;
-    }
-    const numericValue = Number(normalized);
-    if (!Number.isFinite(numericValue)) {
-      setDisplayMonto("");
-      onChange({ monto: 0 });
-      return;
-    }
-
-    const clamped = Math.min(MAX_MONTO, Math.max(MIN_MONTO, numericValue));
-    const normalizedClamped = clamped.toFixed(2);
-    setDisplayMonto(formatMoneyInput(normalizedClamped));
-    onChange({ monto: clamped });
-  };
+  const selectedCurrency = useMemo(() => {
+    const account = cuentas.find((c) => c.id === form.cuentaId);
+    return account?.moneda || "COP";
+  }, [cuentas, form.cuentaId]);
 
   const cuentasOrigenOptions = cuentas
     .filter((c) => !c.cerradaEn || c.id === form.cuentaId)
@@ -98,13 +71,38 @@ export function TransactionForm({
     .filter((c) => c.id !== form.cuentaId && (!c.cerradaEn || c.id === form.cuentaDestinoId))
     .map((c) => ({ label: c.nombre, value: c.id }));
 
-  const categoriasOptions = [
-    { label: "Sin categoría", value: "" },
-    ...categorias.map((c) => ({ label: c.nombre, value: c.id })),
-  ];
+  const categoriasFiltradas = categorias.filter((c) => {
+    if (mode === "SALIDA") return c.tipo === "GASTO";
+    if (mode === "ENTRADA") return c.tipo === "INGRESO";
+    return true;
+  });
+
+  const categoriasOptions = categoriasFiltradas.map((c) => ({
+    label: c.nombre,
+    value: c.id,
+  }));
+
+  const categoriaIds =
+    form.categoriaIds && Array.isArray(form.categoriaIds)
+      ? form.categoriaIds
+      : form.categoriaId
+        ? [form.categoriaId]
+        : [];
+
+  const selectedCategoriaLabels = useMemo(() => {
+    if (categoriaIds.length === 0) return [];
+    const byId = new Map(categorias.map((c) => [c.id, c.nombre]));
+    return categoriaIds.map((id) => ({ id, nombre: byId.get(id) ?? "Categoría" }));
+  }, [categoriaIds, categorias]);
 
   return (
-    <div className="space-y-5">
+    <form
+      className="space-y-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!busy) onSubmit();
+      }}
+    >
       
       {/* TABS DE SELECCIÓN */}
       {/* Si es una transferencia existente, no mostramos tabs para evitar romper la integridad */}
@@ -160,22 +158,16 @@ export function TransactionForm({
       )}
 
       {/* INPUT MONTO */}
-      <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-zinc-400">
-            Monto
-        </label>
-        <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold">$</span>
-            <input
-                type="text"
-                value={displayMonto}
-                onChange={handleMoneyChange}
-                placeholder="0"
-                autoFocus={!isEditing}
-                className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-8 pr-4 text-xl font-bold text-slate-900 outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 dark:border-white/10 dark:bg-black/40 dark:text-white dark:focus:ring-white/5"
-            />
-        </div>
-      </div>
+      <MoneyField
+        label="Monto"
+        value={form.monto > 0 ? String(form.monto) : ""}
+        onChange={(raw) => {
+          const value = parseMoneyInputToNumber(raw, { decimals: 2 });
+          onChange({ monto: Math.max(0, value) });
+        }}
+        currency={selectedCurrency}
+        placeholder="0"
+      />
 
       {/* GRID DE CUENTAS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -213,13 +205,31 @@ export function TransactionForm({
         />
 
         {mode !== "TRANSFERENCIA" && (
-            <SelectField
-            label="Categoría"
-            value={form.categoriaId ?? ""}
-            onChange={(v) => onChange({ categoriaId: v })}
-            options={categoriasOptions}
-            placeholder="Sin categoría"
+          <div className="space-y-2">
+            <MultiSelectField
+              label={mode === "SALIDA" ? "Categorías (Gastos)" : "Categorías (Ingresos)"}
+              values={categoriaIds}
+              onChange={(vals) => onChange({ categoriaIds: vals, categoriaId: vals[0] ?? "" })}
+              options={categoriasOptions}
+              hint="Tip: Ctrl/Cmd + click para seleccionar varias"
+              size={6}
             />
+            {selectedCategoriaLabels.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {selectedCategoriaLabels.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => onChange({ categoriaIds: categoriaIds.filter((x) => x !== c.id) })}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
+                    title="Quitar"
+                  >
+                    {c.nombre} ×
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -255,8 +265,7 @@ export function TransactionForm({
             Cancelar
           </button>
           <button
-            type="button"
-            onClick={onSubmit}
+            type="submit"
             disabled={busy}
             className={`
               px-6 py-2 text-sm font-semibold text-white rounded-full shadow-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100
@@ -269,6 +278,6 @@ export function TransactionForm({
           </button>
         </div>
       </div>
-    </div>
+    </form>
   );
 }

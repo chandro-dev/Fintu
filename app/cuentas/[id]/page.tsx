@@ -31,6 +31,7 @@ const createEmptyTx = (now: string, cuentaId: string): TxForm => ({
   direccion: "SALIDA",
   descripcion: "",
   categoriaId: undefined,
+  categoriaIds: [],
   ocurrioEn: now
 });
 
@@ -250,12 +251,16 @@ export default function CuentaDetallePage() {
 
   const startEdit = (tx: Transaccion) => {
     setEditingTxId(tx.id);
+    const categoriaIds = Array.isArray(tx.categoriasPivot)
+      ? tx.categoriasPivot.map((p) => p.categoriaId).filter(Boolean)
+      : [];
     setTxForm({
       cuentaId: tx.cuentaId,
       monto: Number(tx.monto ?? 0),
       direccion: tx.direccion,
       descripcion: tx.descripcion ?? "",
       categoriaId: tx.categoria?.id ?? "",
+      categoriaIds: categoriaIds.length > 0 ? categoriaIds : (tx.categoria?.id ? [tx.categoria.id] : []),
       ocurrioEn: new Date(tx.ocurrioEn).toISOString().slice(0, 16)
     });
     setTxError(null);
@@ -510,7 +515,7 @@ export default function CuentaDetallePage() {
                   value={targetBalance}
                   onChange={(v) => setTargetBalance(v)}
                   currency={currency}
-                  minValue={100}
+                  allowNegative
                   maxValue={100_000_000}
                 />
               </div>

@@ -198,6 +198,9 @@ export default function Dashboard() {
 
 const handleEditTx = (tx: any) => {
   setEditingId(tx.id);
+  const categoriaIds = Array.isArray(tx.categoriasPivot)
+    ? tx.categoriasPivot.map((p: any) => p.categoriaId).filter(Boolean)
+    : [];
   
   setEditingTx({
     cuentaId: tx.cuentaId,
@@ -209,6 +212,7 @@ const handleEditTx = (tx: any) => {
     
     descripcion: tx.descripcion ?? "",
     categoriaId: tx.categoria?.id ?? "",
+    categoriaIds: categoriaIds.length > 0 ? categoriaIds : (tx.categoria?.id ? [tx.categoria.id] : []),
     ocurrioEn: new Date(tx.ocurrioEn).toISOString().slice(0, 16),
     
     // 🔥 ESTO ES LA CLAVE:
