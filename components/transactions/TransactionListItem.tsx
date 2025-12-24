@@ -57,8 +57,7 @@ export function TransactionListItem({ tx, onEdit, onDelete }: Props) {
   const time = dateObj.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
 
   return (
-    <div className={`group flex items-center justify-between rounded-2xl border border-transparent px-4 py-3 transition-all duration-200 ${bgClass} border-slate-100 dark:border-white/5 shadow-sm hover:shadow-md`}>
-      
+    <div className={`group flex flex-col gap-3 rounded-2xl border border-transparent px-4 py-3 transition-all duration-200 ${bgClass} border-slate-100 dark:border-white/5 shadow-sm hover:shadow-md sm:flex-row sm:items-center sm:justify-between`}>
       <div className="flex items-center gap-4 overflow-hidden">
         {/* Icono */}
         <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${iconColorClass}`}>
@@ -95,40 +94,42 @@ export function TransactionListItem({ tx, onEdit, onDelete }: Props) {
         </div>
       </div>
 
-      <div className="flex flex-col items-end gap-1 pl-2">
-        {/* Monto con color y signo dinámico */}
-        <p className={`text-base font-bold tabular-nums tracking-tight ${amountColorClass}`}>
-          {sign} 
-          {formatMoney(Number(tx.monto), currency)}
-        </p>
-        
-        <div className="flex items-center justify-end gap-3">
-            {/* Fecha */}
-            <div className="flex items-center gap-1 text-[11px] text-slate-400 font-medium">
-                <Calendar size={10} />
-                <span>{day}, {time}</span>
-            </div>
+      <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end sm:gap-1 sm:pl-2">
+        <div className="flex flex-col gap-1">
+          {/* Monto con color y signo dinámico */}
+          <p className={`text-base font-bold tabular-nums tracking-tight ${amountColorClass}`}>
+            {sign}
+            {formatMoney(Number(tx.monto), currency)}
+          </p>
 
-            {/* Acciones */}
-            <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          {/* Fecha */}
+          <div className="flex items-center gap-1 text-[11px] text-slate-400 font-medium">
+            <Calendar size={10} />
+            <span>
+              {day}, {time}
+            </span>
+          </div>
+        </div>
+
+        {/* Acciones: visibles en móvil (no hay hover), hover en desktop */}
+        <div className="flex gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+          <button
+            onClick={() => onEdit(tx)}
+            className="rounded-md p-2 text-slate-400 hover:bg-slate-200 hover:text-sky-600 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
+            title="Editar"
+          >
+            <Edit2 size={16} />
+          </button>
+
+          {onDelete && (
             <button
-                onClick={() => onEdit(tx)}
-                className="rounded-md p-1 text-slate-400 hover:bg-slate-200 hover:text-sky-600 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
-                title="Editar"
+              onClick={() => onDelete(tx.id)}
+              className="rounded-md p-2 text-slate-400 hover:bg-rose-100 hover:text-rose-500 dark:hover:bg-rose-500/20 dark:hover:text-rose-400 transition-colors"
+              title="Eliminar"
             >
-                <Edit2 size={14} />
+              <Trash2 size={16} />
             </button>
-            
-            {onDelete && (
-                <button
-                onClick={() => onDelete(tx.id)}
-                className="rounded-md p-1 text-slate-400 hover:bg-rose-100 hover:text-rose-500 dark:hover:bg-rose-500/20 dark:hover:text-rose-400 transition-colors"
-                title="Eliminar"
-                >
-                <Trash2 size={14} />
-                </button>
-            )}
-            </div>
+          )}
         </div>
       </div>
     </div>

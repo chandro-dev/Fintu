@@ -5,6 +5,7 @@ import { InputField, MoneyField, MultiSelectField, SelectField } from "@/compone
 import type { Categoria, Cuenta, TxForm } from "./types";
 import { ArrowDown, ArrowUp, ArrowRightLeft } from "lucide-react";
 import { parseMoneyInputToNumber } from "@/lib/moneyInput";
+import { formatMoney } from "@/lib/formatMoney";
 
 type Props = {
   form: TxForm;
@@ -64,12 +65,23 @@ export function TransactionForm({
     return account?.moneda || "COP";
   }, [cuentas, form.cuentaId]);
 
+  const selectedAccount = useMemo(
+    () => cuentas.find((c) => c.id === form.cuentaId),
+    [cuentas, form.cuentaId],
+  );
+
   const cuentasOrigenOptions = cuentas
     .filter((c) => !c.cerradaEn || c.id === form.cuentaId)
-    .map((c) => ({ label: c.nombre, value: c.id }));
+    .map((c) => ({
+      label: `${c.nombre} · ${formatMoney(Number(c.saldo ?? 0), c.moneda)}`,
+      value: c.id,
+    }));
   const cuentasDestinoOptions = cuentas
     .filter((c) => c.id !== form.cuentaId && (!c.cerradaEn || c.id === form.cuentaDestinoId))
-    .map((c) => ({ label: c.nombre, value: c.id }));
+    .map((c) => ({
+      label: `${c.nombre} · ${formatMoney(Number(c.saldo ?? 0), c.moneda)}`,
+      value: c.id,
+    }));
 
   const categoriasFiltradas = categorias.filter((c) => {
     if (mode === "SALIDA") return c.tipo === "GASTO";
@@ -168,6 +180,26 @@ export function TransactionForm({
         currency={selectedCurrency}
         placeholder="0"
       />
+      {selectedAccount ? (
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-white/10 dark:bg-black/30">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-zinc-500">
+              Cuenta
+            </p>
+            <p className="truncate font-semibold text-slate-800 dark:text-zinc-100">
+              {selectedAccount.nombre}
+            </p>
+          </div>
+          <div className="ml-4 text-right">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-zinc-500">
+              Saldo
+            </p>
+            <p className="font-mono font-bold text-slate-800 dark:text-zinc-100">
+              {formatMoney(Number(selectedAccount.saldo ?? 0), selectedAccount.moneda)}
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {/* GRID DE CUENTAS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

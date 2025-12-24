@@ -37,7 +37,7 @@ export default function RootLayout({
           <ThemeSurface>
             <AppDataProvider>
               <div className="min-h-screen pb-24">{children}</div>
-              <div className="fixed bottom-6 right-6 z-40">
+              <div className="fixed bottom-28 right-4 z-40 md:bottom-6 md:right-6">
                 <ThemeToggle />
               </div>
               <NavBar />

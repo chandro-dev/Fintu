@@ -251,7 +251,7 @@ const handleEditTx = (tx: any) => {
 
   return (
     <div className="min-h-screen text-slate-900 dark:text-zinc-50">
-      <div className="mx-auto max-w-7xl px-6 py-10 flex flex-col gap-10">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:gap-10 sm:px-6 sm:py-10">
         
         {/* HEADER */}
         <header className="flex flex-wrap items-center justify-between gap-4">
@@ -259,7 +259,7 @@ const handleEditTx = (tx: any) => {
             <p className="text-xs uppercase tracking-[0.3em] text-sky-300 font-bold">
               Fintu Dashboard
             </p>
-            <h1 className="text-4xl font-semibold text-slate-900 dark:text-white">
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white sm:text-4xl">
               Finanzas personales
             </h1>
           </div>
@@ -284,7 +284,7 @@ const handleEditTx = (tx: any) => {
         <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           
           {/* Cuentas (No afectadas por filtros de transacción, muestran saldo real) */}
-          <div className="rounded-2xl border border-slate-500/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5">
+          <div className="rounded-2xl border border-slate-500/80 bg-white p-4 shadow-lg dark:border-white/10 dark:bg-white/5 sm:p-6">
             <div className="flex justify-between mb-4 items-center">
               <h2 className="text-xl font-semibold">Cuentas</h2>
               <span className={`text-sm font-mono font-bold px-2 py-0.5 rounded-md ${saldoColorClass}`}>
@@ -295,7 +295,7 @@ const handleEditTx = (tx: any) => {
           </div>
 
           {/* Categorías */}
-          <div className="flex flex-col h-full rounded-2xl border border-slate-500/80 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-white/5">
+          <div className="flex flex-col h-full rounded-2xl border border-slate-500/80 bg-white p-4 shadow-lg dark:border-white/10 dark:bg-white/5 sm:p-6">
             <div className="flex justify-between mb-4">
               <h2 className="text-xl font-semibold">Categorías</h2>
             </div>
@@ -325,12 +325,12 @@ const handleEditTx = (tx: any) => {
 
         {/* GRÁFICAS */}
         <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="rounded-2xl border bg-white/80 p-6 shadow dark:border-white/10 dark:bg-white/5">
+          <div className="rounded-2xl border bg-white/80 p-4 shadow dark:border-white/10 dark:bg-white/5 sm:p-6">
             <h3 className="mb-4 font-semibold text-slate-700 dark:text-slate-200">Flujo mensual</h3>
             <FlowChart data={flowByMonth} />
           </div>
 
-          <div className="rounded-2xl border bg-white/80 p-6 shadow dark:border-white/10 dark:bg-white/5">
+          <div className="rounded-2xl border bg-white/80 p-4 shadow dark:border-white/10 dark:bg-white/5 sm:p-6">
             <h3 className="mb-4 font-semibold text-slate-700 dark:text-slate-200">Top Gastos</h3>
             <div className="space-y-3">
               {gastosPorCategoria.map((cat) => (
@@ -348,7 +348,7 @@ const handleEditTx = (tx: any) => {
             </div>
           </div>
 
-          <div className="rounded-2xl border bg-white/80 p-6 shadow dark:border-white/10 dark:bg-white/5">
+          <div className="rounded-2xl border bg-white/80 p-4 shadow dark:border-white/10 dark:bg-white/5 sm:p-6">
             <h3 className="mb-4 font-semibold text-slate-700 dark:text-slate-200">Saldos (cuentas)</h3>
             <div className="space-y-3">
               {saldoPorCuentaSeleccionada.map((item: any) => (
@@ -367,7 +367,7 @@ const handleEditTx = (tx: any) => {
         </section>
 
         {/* LISTA DE TRANSACCIONES */}
-        <section className="rounded-2xl border bg-white/80 p-6 shadow dark:border-white/10 dark:bg-white/5">
+        <section className="rounded-2xl border bg-white/80 p-4 shadow dark:border-white/10 dark:bg-white/5 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold">
               Transacciones ({filteredTransactions.length})

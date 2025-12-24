@@ -11,6 +11,7 @@ import { TransactionListItem } from "@/components/transactions/TransactionListIt
 import { SelectField } from "@/components/ui/Fields"; 
 import { TransaccionService } from "@/lib/services/TransaccionService";
 import { Loading } from "@/components/ui/Loading";
+import { Modal } from "@/components/ui/Modal";
 
 // Tipos
 import type { Transaccion, TxForm } from "@/components/transactions/types";
@@ -404,12 +405,25 @@ const summary = useMemo(() => {
 
       {/* MODALES */}
       {showCreateModal && isSignedIn && (
-        <Modal title="Nueva transacción" onClose={() => setShowCreateModal(false)}>
+        <Modal
+          open
+          title="Nueva transacción"
+          onClose={() => setShowCreateModal(false)}
+          maxWidth="max-w-2xl"
+        >
           <TransactionCreationPanel cuentas={cuentas} categorias={categorias} nowLocal={nowLocal} authToken={accessToken} onCreated={() => { setShowCreateModal(false); forceRefresh(); setActionMessage("Creado exitosamente"); }} />
         </Modal>
       )}
       {showEditModal && editingTxId && (
-        <Modal title="Editar" onClose={() => { setShowEditModal(false); setEditingTxId(null); }}>
+        <Modal
+          open
+          title="Editar"
+          onClose={() => {
+            setShowEditModal(false);
+            setEditingTxId(null);
+          }}
+          maxWidth="max-w-2xl"
+        >
           {editError && <div className="mb-4 p-2 bg-rose-500/10 text-rose-500 rounded text-sm">{editError}</div>}
           <TransactionForm form={editForm} cuentas={cuentas} categorias={categorias} nowLocal={nowLocal} busy={editBusy} isEditing onChange={p => setEditForm(prev => ({ ...prev, ...p }))} onSubmit={handleEditSubmit} onDelete={() => handleDeleteTransaction(editingTxId)} onCancel={() => { setShowEditModal(false); setEditingTxId(null); }} />
         </Modal>
@@ -434,18 +448,4 @@ function KPICard({ label, value, color }: { label: string, value: number, color:
             <p className={`text-xl font-bold ${color} mt-1`}>{formatMoney(value)}</p>
         </div>
     )
-}
-
-function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void; }) {
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-      <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-white/10 p-6 shadow-2xl">
-        <div className="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-white/5 pb-4">
-            <h3 className="font-bold text-lg dark:text-white">{title}</h3>
-            <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full">✕</button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
 }
