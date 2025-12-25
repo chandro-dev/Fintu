@@ -6,6 +6,7 @@ import type { Categoria, Cuenta, TxForm } from "./types";
 import { ArrowDown, ArrowUp, ArrowRightLeft } from "lucide-react";
 import { parseMoneyInputToNumber } from "@/lib/moneyInput";
 import { formatMoney } from "@/lib/formatMoney";
+import { CategoryIcon } from "@/lib/categoryIcons";
 
 type Props = {
   form: TxForm;
@@ -103,13 +104,17 @@ export function TransactionForm({
 
   const selectedCategoriaLabels = useMemo(() => {
     if (categoriaIds.length === 0) return [];
-    const byId = new Map(categorias.map((c) => [c.id, c.nombre]));
-    return categoriaIds.map((id) => ({ id, nombre: byId.get(id) ?? "Categoría" }));
+    const byId = new Map(categorias.map((c) => [c.id, { nombre: c.nombre, icono: c.icono ?? null }]));
+    return categoriaIds.map((id) => ({
+      id,
+      nombre: byId.get(id)?.nombre ?? "Categoría",
+      icono: byId.get(id)?.icono ?? null,
+    }));
   }, [categoriaIds, categorias]);
 
   return (
     <form
-      className="space-y-5"
+      className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
         if (!busy) onSubmit();
@@ -119,14 +124,18 @@ export function TransactionForm({
       {/* TABS DE SELECCIÓN */}
       {/* Si es una transferencia existente, no mostramos tabs para evitar romper la integridad */}
       {(!isEditing || !form.isTransferencia) && (
-        <div className={`grid gap-2 p-1 bg-slate-100 dark:bg-black/40 rounded-xl ${isEditing ? "grid-cols-2" : "grid-cols-3"}`}>
+        <div
+          className={`grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1.5 shadow-sm dark:border-white/10 dark:bg-black/30 ${
+            isEditing ? "grid-cols-2" : "grid-cols-3"
+          }`}
+        >
           <button
             type="button"
             onClick={() => setMode("SALIDA")}
-            className={`flex items-center justify-center gap-2 py-2 text-sm font-semibold rounded-lg transition-all ${
+            className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-all ${
               mode === "SALIDA"
-                ? "bg-white dark:bg-zinc-800 text-rose-500 shadow-sm"
-                : "text-slate-500 hover:text-slate-700 dark:text-zinc-400"
+                ? "bg-white text-rose-600 shadow dark:bg-zinc-900 dark:text-rose-400"
+                : "text-slate-500 hover:bg-white/70 hover:text-slate-700 dark:text-zinc-400 dark:hover:bg-white/5"
             }`}
           >
             <ArrowUp size={16} /> Gasto
@@ -135,10 +144,10 @@ export function TransactionForm({
           <button
             type="button"
             onClick={() => setMode("ENTRADA")}
-            className={`flex items-center justify-center gap-2 py-2 text-sm font-semibold rounded-lg transition-all ${
+            className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-all ${
               mode === "ENTRADA"
-                ? "bg-white dark:bg-zinc-800 text-emerald-500 shadow-sm"
-                : "text-slate-500 hover:text-slate-700 dark:text-zinc-400"
+                ? "bg-white text-emerald-600 shadow dark:bg-zinc-900 dark:text-emerald-400"
+                : "text-slate-500 hover:bg-white/70 hover:text-slate-700 dark:text-zinc-400 dark:hover:bg-white/5"
             }`}
           >
             <ArrowDown size={16} /> Ingreso
@@ -149,10 +158,10 @@ export function TransactionForm({
             <button
               type="button"
               onClick={() => setMode("TRANSFERENCIA")}
-              className={`flex items-center justify-center gap-2 py-2 text-sm font-semibold rounded-lg transition-all ${
+              className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-all ${
                 mode === "TRANSFERENCIA"
-                  ? "bg-white dark:bg-zinc-800 text-sky-500 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700 dark:text-zinc-400"
+                  ? "bg-white text-sky-600 shadow dark:bg-zinc-900 dark:text-sky-400"
+                  : "text-slate-500 hover:bg-white/70 hover:text-slate-700 dark:text-zinc-400 dark:hover:bg-white/5"
               }`}
             >
               <ArrowRightLeft size={16} /> Transferir
@@ -253,9 +262,10 @@ export function TransactionForm({
                     key={c.id}
                     type="button"
                     onClick={() => onChange({ categoriaIds: categoriaIds.filter((x) => x !== c.id) })}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
                     title="Quitar"
                   >
+                    {c.icono ? <CategoryIcon name={c.icono} size={14} className="text-slate-500 dark:text-zinc-300" /> : null}
                     {c.nombre} ×
                   </button>
                 ))}
@@ -275,12 +285,13 @@ export function TransactionForm({
       )}
 
       {/* BOTONES */}
-      <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-white/10 mt-2">
+      <div className="sticky bottom-0 -mx-4 mt-2 border-t border-slate-200 bg-white/95 px-4 pb-2 pt-4 backdrop-blur dark:border-white/10 dark:bg-zinc-950/80 sm:-mx-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:backdrop-blur-0">
+        <div className="flex items-center justify-between">
         {isEditing && onDelete ? (
           <button
             type="button"
             onClick={onDelete}
-            className="text-sm font-semibold text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 px-3 py-2 rounded-lg transition-colors"
+            className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-100 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
           >
             Eliminar
           </button>
@@ -288,11 +299,11 @@ export function TransactionForm({
           <div /> 
         )}
 
-        <div className="flex gap-3">
+        <div className="grid w-full max-w-[320px] grid-cols-2 gap-2 sm:flex sm:w-auto sm:max-w-none sm:gap-3">
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-zinc-300 dark:hover:bg-white/10 rounded-full transition-colors"
+            className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
           >
             Cancelar
           </button>
@@ -300,7 +311,7 @@ export function TransactionForm({
             type="submit"
             disabled={busy}
             className={`
-              px-6 py-2 text-sm font-semibold text-white rounded-full shadow-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100
+              w-full rounded-full px-6 py-2 text-sm font-semibold text-white shadow-lg transition-all active:scale-[0.99] disabled:opacity-50 disabled:shadow-none
               ${mode === "SALIDA" ? "bg-rose-500 hover:bg-rose-600 shadow-rose-500/20" : ""}
               ${mode === "ENTRADA" ? "bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20" : ""}
               ${mode === "TRANSFERENCIA" ? "bg-sky-500 hover:bg-sky-600 shadow-sky-500/20" : ""}
@@ -308,6 +319,7 @@ export function TransactionForm({
           >
             {busy ? "Guardando..." : isEditing ? "Actualizar" : "Guardar"}
           </button>
+        </div>
         </div>
       </div>
     </form>

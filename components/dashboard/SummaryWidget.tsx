@@ -2,6 +2,7 @@ import { StatCard } from "@/components/ui/charts/StatCard";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 import type { Categoria, Cuenta } from "@/components/transactions/types";
 import { useMemo, useState } from "react";
+import { CategoryIcon } from "@/lib/categoryIcons";
 
 interface SummaryProps {
   ingresos: number;
@@ -23,12 +24,17 @@ interface SummaryProps {
 function Chip({
   label,
   onRemove,
+  iconName,
 }: {
   label: string;
   onRemove: () => void;
+  iconName?: string | null;
 }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-zinc-200">
+      {iconName ? (
+        <CategoryIcon name={iconName} size={14} className="text-slate-500 dark:text-zinc-300" />
+      ) : null}
       <span className="max-w-[140px] truncate">{label}</span>
       <button
         type="button"
@@ -50,7 +56,7 @@ function MultiSelect({
   emptyLabel = "Todas",
 }: {
   label: string;
-  items: { id: string; label: string; subLabel?: string }[];
+  items: { id: string; label: string; subLabel?: string; iconName?: string | null }[];
   selectedIds: string[];
   onChange: (ids: string[]) => void;
   emptyLabel?: string;
@@ -106,7 +112,12 @@ function MultiSelect({
             .filter((i) => selected.has(i.id))
             .slice(0, 6)
             .map((i) => (
-              <Chip key={i.id} label={i.label} onRemove={() => toggle(i.id)} />
+              <Chip
+                key={i.id}
+                label={i.label}
+                iconName={i.iconName}
+                onRemove={() => toggle(i.id)}
+              />
             ))}
           {selectedIds.length > 6 && (
             <span className="text-[11px] font-semibold text-slate-400 dark:text-zinc-500">
@@ -177,6 +188,13 @@ function MultiSelect({
                   >
                     <Check size={14} />
                   </span>
+                  {i.iconName ? (
+                    <CategoryIcon
+                      name={i.iconName}
+                      size={16}
+                      className={isSelected ? "text-sky-600 dark:text-sky-300" : "text-slate-500 dark:text-zinc-300"}
+                    />
+                  ) : null}
                   <div className="min-w-0">
                     <p className="truncate text-xs font-semibold">{i.label}</p>
                     {i.subLabel && (
@@ -241,6 +259,7 @@ export function SummaryWidget({
         id: c.id,
         label: c.nombre,
         subLabel: c.tipo,
+        iconName: c.icono ?? null,
       })),
     [categorias],
   );

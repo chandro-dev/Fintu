@@ -24,7 +24,7 @@ import { CategoryBar } from "@/components/ui/charts/CategoryBar";
 import { DonutRow } from "@/components/ui/charts/DonutRow";
 
 // Tipos
-import { TxForm } from "@/components/transactions/types";
+import { Cuenta, TxForm } from "@/components/transactions/types";
 
 const CODIGO_TIPO_CUENTA_NORMAL = "NORMAL";
 
@@ -52,14 +52,28 @@ export default function Dashboard() {
 
   const [filtersHydrated, setFiltersHydrated] = useState(false);
 
-  const cuentasNormales = useMemo(
+  const cuentasNormales = useMemo<Cuenta[]>(
     () =>
-      cuentas.filter(
-        (c: any) =>
-          c?.tipoCuenta?.codigo === CODIGO_TIPO_CUENTA_NORMAL && !c?.cerradaEn,
-      ),
+      (cuentas as Cuenta[]).filter((c) => {
+        return c?.tipoCuenta?.codigo === CODIGO_TIPO_CUENTA_NORMAL && !c?.cerradaEn;
+      }),
     [cuentas],
   );
+
+  const allAccountIds = useMemo(() => cuentasNormales.map((c) => c.id), [cuentasNormales]);
+
+  const selectedAccountIds = useMemo(() => filters.accountIds ?? [], [filters.accountIds]);
+  const selectedAccountIdSet = useMemo(
+    () => new Set(selectedAccountIds),
+    [selectedAccountIds],
+  );
+
+  const setAccountSelection = (ids: string[]) => {
+    const next = Array.from(new Set(ids));
+    // Mantener siempre al menos 1 (si queda vacío, volvemos a todas)
+    const normalized = next.length === 0 ? allAccountIds : next;
+    setFilters((p: any) => ({ ...p, accountIds: normalized }));
+  };
 
   // Inicializar selección: por defecto todas las cuentas normales
   useEffect(() => {
@@ -72,9 +86,17 @@ export default function Dashboard() {
 
     setFilters((prev) => ({
       ...prev,
-      accountIds: cuentasNormales.map((c: any) => c.id),
+      accountIds: allAccountIds,
     }));
-  }, [cuentasNormales]);
+  }, [cuentasNormales, allAccountIds]);
+
+  // Si venía vacío desde localStorage, normalizar a "todas"
+  useEffect(() => {
+    if (!filtersHydrated) return;
+    if (!allAccountIds.length) return;
+    if ((filters.accountIds?.length ?? 0) > 0) return;
+    setFilters((p: any) => ({ ...p, accountIds: allAccountIds }));
+  }, [filtersHydrated, allAccountIds, filters.accountIds]);
 
   // Persistir selección para UX
   useEffect(() => {
@@ -244,7 +266,9 @@ const handleEditTx = (tx: any) => {
 
   if (!session) return null;
 
-  const saldoNum = Number(totalSaldo || 0);
+  const saldoNum = cuentasNormales
+    .filter((c) => selectedAccountIdSet.has(c.id))
+    .reduce((acc, c) => acc + Number(c.saldo ?? 0), 0);
   const saldoColorClass = saldoNum >= 0 
     ? "text-emerald-500 bg-emerald-500/10" 
     : "text-rose-500 bg-rose-500/10";
@@ -287,11 +311,26 @@ const handleEditTx = (tx: any) => {
           <div className="rounded-2xl border border-slate-500/80 bg-white p-4 shadow-lg dark:border-white/10 dark:bg-white/5 sm:p-6">
             <div className="flex justify-between mb-4 items-center">
               <h2 className="text-xl font-semibold">Cuentas</h2>
-              <span className={`text-sm font-mono font-bold px-2 py-0.5 rounded-md ${saldoColorClass}`}>
-                {formatMoney(saldoNum)}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400">
+                  {selectedAccountIds.length}/{cuentasNormales.length}
+                </span>
+                <span className={`text-sm font-mono font-bold px-2 py-0.5 rounded-md ${saldoColorClass}`}>
+                  {formatMoney(saldoNum)}
+                </span>
+              </div>
             </div>
-            <AccountsList cuentas={cuentasNormales} loading={loadingData} />
+            <AccountsList
+              cuentas={cuentasNormales}
+              loading={loadingData}
+              selectedAccountIds={selectedAccountIds}
+              onToggleSelect={(accountId) => {
+                const next = new Set(selectedAccountIds);
+                if (next.has(accountId)) next.delete(accountId);
+                else next.add(accountId);
+                setAccountSelection(Array.from(next));
+              }}
+            />
           </div>
 
           {/* Categorías */}

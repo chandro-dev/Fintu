@@ -110,6 +110,7 @@ export function TransactionModal({
       open={open}
       onClose={onClose}
       title={editingId ? "Editar transacción" : "Nueva transacción"}
+      maxWidth="max-w-lg"
     >
       <TransactionForm
         // Estado

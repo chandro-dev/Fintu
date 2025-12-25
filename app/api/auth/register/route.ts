@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { prisma } from "@/lib/db";
 import { hashPassword } from "@/lib/password";
+import { ensureDefaultCategories } from "@/lib/defaultCategories";
 
 // POST /api/auth/register -> crea usuario en Supabase Auth con email/password y lo refleja en la tabla Usuario.
 export async function POST(request: Request) {
@@ -46,6 +47,9 @@ export async function POST(request: Request) {
       passwordHash,
     },
   });
+
+  // Crear categorías por defecto para el nuevo usuario (idempotente).
+  await ensureDefaultCategories(prisma, data.user.id);
 
   return NextResponse.json({ ok: true, userId: data.user.id });
 }

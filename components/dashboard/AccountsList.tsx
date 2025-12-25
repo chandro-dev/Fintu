@@ -2,13 +2,21 @@ import Link from "next/link";
 import { Cuenta } from "@/components/transactions/types";
 import { formatMoney } from "@/lib/formatMoney";
 import { Loading } from "@/components/ui/Loading";
+import { Check } from "lucide-react";
 
 interface AccountsListProps {
   cuentas: Cuenta[];
   loading: boolean;
+  selectedAccountIds?: string[];
+  onToggleSelect?: (accountId: string) => void;
 }
 
-export  function AccountsList({ cuentas, loading }: AccountsListProps) {
+export function AccountsList({
+  cuentas,
+  loading,
+  selectedAccountIds,
+  onToggleSelect,
+}: AccountsListProps) {
   // 1. Estado de carga inicial
   if (loading && cuentas.length === 0) {
     return (
@@ -32,12 +40,15 @@ export  function AccountsList({ cuentas, loading }: AccountsListProps) {
     );
   }
 
+  const selected = new Set(selectedAccountIds ?? []);
+
   return (
     <div className="grid grid-cols-1 gap-3">
       {cuentas.map((c) => {
         // 1. Extraemos el valor numérico para evaluarlo
         const saldo = Number(c.saldo ?? 0);
         const isNegative = saldo < 0;
+        const isSelected = selectedAccountIds ? selected.has(c.id) : false;
 
         return (
           <Link
@@ -47,13 +58,33 @@ export  function AccountsList({ cuentas, loading }: AccountsListProps) {
           >
             <div className="flex items-center justify-between">
               {/* Izquierda: Nombre y Tipo */}
-              <div>
+              <div className="flex min-w-0 items-center gap-3">
+                {onToggleSelect && selectedAccountIds && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onToggleSelect(c.id);
+                    }}
+                    aria-label={isSelected ? "Quitar cuenta" : "Incluir cuenta"}
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-colors ${
+                      isSelected
+                        ? "border-sky-400 bg-sky-500 text-white"
+                        : "border-slate-300 bg-white text-transparent hover:border-sky-400/60 dark:border-white/20 dark:bg-black/20"
+                    }`}
+                  >
+                    <Check size={14} />
+                  </button>
+                )}
+                <div className="min-w-0">
                 <p className="font-semibold text-slate-900 transition-colors group-hover:text-indigo-600 dark:text-white dark:group-hover:text-indigo-400">
                   {c.nombre}
                 </p>
                 <p className="text-xs text-slate-500 dark:text-zinc-400">
                   {c.tipoCuenta?.nombre ?? "Cuenta"}
                 </p>
+                </div>
               </div>
 
               {/* Derecha: Saldo y APR */}

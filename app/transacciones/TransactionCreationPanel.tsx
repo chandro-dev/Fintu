@@ -84,7 +84,7 @@ export function TransactionCreationPanel({
   };
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-lg">
+    <div className="rounded-2xl border border-white/10 dark:bg-slate-900/60 p-4 shadow-lg">
       {error && (
         <div className="mb-3 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
           {error}

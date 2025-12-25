@@ -43,7 +43,7 @@ export function Modal({
   return (
     // Backdrop (Fondo oscuro)
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 transition-opacity duration-300"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-white/70 backdrop-blur-sm p-0 transition-opacity duration-300 dark:bg-black/60 sm:p-4"
       aria-modal="true"
       role="dialog"
       onClick={onClose} // Clic en el fondo cierra el modal

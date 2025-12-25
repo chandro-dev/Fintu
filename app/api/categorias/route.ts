@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/supabaseAdmin";
+import { ensureDefaultCategories } from "@/lib/defaultCategories";
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +9,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+
+  // Backfill idempotente: asegura que existan las categorías por defecto aunque el usuario ya tenga algunas.
+  await ensureDefaultCategories(prisma, user.id);
 
   const categorias = await prisma.categoria.findMany({
     where: { usuarioId: user.id },
