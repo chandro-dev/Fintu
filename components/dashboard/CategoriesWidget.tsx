@@ -3,17 +3,21 @@
 import { useMemo } from "react";
 import { Categoria } from "@/components/transactions/types";
 import { Loading } from "@/components/ui/Loading";
-import { TrendingDown, TrendingUp, Tag } from "lucide-react";
-import { CategoryBadge } from "@/components/ui/CategoryBadge"; // <--- IMPORTAMOS EL COMPONENTE REUTILIZABLE
+import { TrendingDown, TrendingUp, Tag, X } from "lucide-react";
+import { CategoryBadge } from "@/components/ui/CategoryBadge";
 
 interface CategoriesWidgetProps {
   categorias: Categoria[];
   loading: boolean;
+  selectedIds?: string[];
+  onSelect?: (ids: string[]) => void;
 }
 
 export function CategoriesWidget({
   categorias,
-  loading
+  loading,
+  selectedIds = [],
+  onSelect,
 }: CategoriesWidgetProps) {
   
   const { gastos, ingresos } = useMemo(() => {
@@ -46,6 +50,27 @@ export function CategoriesWidget({
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {onSelect && (
+        <div className="mb-3 flex items-center justify-between rounded-xl border border-slate-100 bg-white/80 px-3 py-2 text-xs shadow-sm dark:border-white/10 dark:bg-white/5">
+          <div className="flex items-center gap-2 text-slate-500 dark:text-zinc-400">
+            <span className="font-semibold text-slate-700 dark:text-white">Selecciona una categoría</span>
+            {selectedIds.length > 0 && (
+              <span className="rounded-full bg-sky-500/10 px-2 py-0.5 font-mono text-[11px] text-sky-600 dark:text-sky-300">
+                {selectedIds.length} activa
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onSelect([])}
+            className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-slate-100 dark:text-zinc-300 dark:hover:bg-white/10"
+          >
+            <X size={12} />
+            Limpiar
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-5">
         
         {/* SECCIÓN GASTOS */}
@@ -57,7 +82,13 @@ export function CategoriesWidget({
             </div>
             <div className="flex flex-wrap gap-2">
               {gastos.map((cat) => (
-                <CategoryBadge key={cat.id} category={cat} size="md" />
+                <CategoryBadge
+                  key={cat.id}
+                  category={cat}
+                  size="md"
+                  onClick={onSelect ? () => onSelect([cat.id]) : undefined}
+                  active={selectedIds.includes(cat.id)}
+                />
               ))}
             </div>
           </div>
@@ -72,7 +103,13 @@ export function CategoriesWidget({
             </div>
             <div className="flex flex-wrap gap-2">
               {ingresos.map((cat) => (
-                <CategoryBadge key={cat.id} category={cat} size="md" />
+                <CategoryBadge
+                  key={cat.id}
+                  category={cat}
+                  size="md"
+                  onClick={onSelect ? () => onSelect([cat.id]) : undefined}
+                  active={selectedIds.includes(cat.id)}
+                />
               ))}
             </div>
           </div>
