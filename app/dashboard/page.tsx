@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabaseClient } from "@/lib/supabaseClient";
@@ -380,7 +380,7 @@ export default function Dashboard() {
   const saldoColorClass =
     saldoNum >= 0 ? "text-emerald-500 bg-emerald-500/10" : "text-rose-500 bg-rose-500/10";
 
-  const moduleBlocks: Record<ModuleKey, JSX.Element> = {
+  const moduleBlocks: Record<ModuleKey, ReactNode> = {
     overview: (
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="rounded-2xl border border-slate-500/80 bg-white p-4 shadow-lg dark:border-white/10 dark:bg-white/5 sm:p-6">
